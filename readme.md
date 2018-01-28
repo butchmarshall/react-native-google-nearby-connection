@@ -39,20 +39,35 @@ allprojects {
 }
 ```
 
-- Add `play-services-nearby` (app build.gradle)
+### app:build.gradle
 
-```gradle
-android {
+Add project under `dependencies`
+
+```
+dependencies {
     ...
-
-    defaultConfig {
-        ...
-        compile 'com.google.android.gms:play-services-nearby:11.8.0'
-        ...
-    }
+	compile 'com.google.android.gms:play-services-nearby:11.8.0'
+    compile project(':react-native-google-nearby-connection')
     ...
 }
 ```
+
+### settings.gradle
+
+Include project, so gradle knows where to find the project
+
+```
+include ':react-native-google-nearby-connection'
+project(':react-native-google-nearby-connection').projectDir = new File(rootProject.projectDir, '../node_modules/react-native-google-nearby-connection/android')
+```
+
+
+### MainApplication.java
+
+We need to register our package
+
+Add `import com.butchmarshall.reactnative.google.nearby.connection.NearbyConnectionPackage;` as an import statement and
+`new NearbyConnectionPackage()` in `getPackages()`
 
 
 # Usage
