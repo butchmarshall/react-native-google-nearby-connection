@@ -626,7 +626,7 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 		long totalBytes = update.getTotalBytes();
 		long payloadId = update.getPayloadId();
 		int payloadStatus = update.getStatus();
-		int hashCode = update.hashCode();
+		int payloadHashCode = update.hashCode();
 
 		// Broadcast endpoint discovered
 		Intent i = new Intent("com.googlenearbyconnection.nearbyconnection.ReceivePayload");
@@ -636,7 +636,7 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 		bundle.putLong("totalBytes", totalBytes);
 		bundle.putLong("payloadId", payloadId);
 		bundle.putInt("payloadStatus", payloadStatus);
-		bundle.putInt("payloadHashCode", hashCode);
+		bundle.putInt("payloadHashCode", payloadHashCode);
 		i.putExtras(bundle);
 
 		final Activity activity = getCurrentActivity();
