@@ -2,7 +2,7 @@ package com.butchmarshall.reactnative.google.nearby.connection;
 
 import static android.os.Process.THREAD_PRIORITY_AUDIO;
 import static android.os.Process.setThreadPriority;
-import static com.googlenearbyconnection.nearbyconnection.Constants.TAG;
+import static com.butchmarshall.reactnative.google.nearby.connection.Constants.TAG;
 
 import android.media.AudioFormat;
 import android.media.AudioManager;
