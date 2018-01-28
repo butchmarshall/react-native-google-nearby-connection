@@ -9,6 +9,7 @@ android {
         targetSdkVersion 26
         versionCode 1
         versionName "1.0"
+        multiDexEnabled true
     }
 
     buildTypes {
@@ -23,4 +24,7 @@ dependencies {
 
     // React Native
     provided "com.facebook.react:react-native:+"
+    compile 'com.google.android.gms:play-services-nearby:11.8.0'
+    compile 'com.android.support:appcompat-v7:25.3.1'
+    compile 'com.android.support:multidex:1.0.1'
 }

@@ -44,10 +44,26 @@ allprojects {
 Add project under `dependencies`
 
 ```
+android {
+    ...
+    compileSdkVersion 26
+    buildToolsVersion "26.0.1"
+    ...
+    defaultConfig {
+        ...
+        minSdkVersion 16
+        targetSdkVersion 26
+        ...
+        multiDexEnabled true
+        ...
+    }
+...
 dependencies {
     ...
 	compile 'com.google.android.gms:play-services-nearby:11.8.0'
     compile project(':react-native-google-nearby-connection')
+	compile 'com.android.support:appcompat-v7:25.3.1'
+    compile 'com.android.support:multidex:1.0.1'
     ...
 }
 ```
