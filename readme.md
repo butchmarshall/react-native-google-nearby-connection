@@ -60,9 +60,9 @@ android {
 ...
 dependencies {
     ...
-	compile 'com.google.android.gms:play-services-nearby:11.8.0'
+    compile 'com.google.android.gms:play-services-nearby:11.8.0'
     compile project(':react-native-google-nearby-connection')
-	compile 'com.android.support:appcompat-v7:25.3.1'
+    compile 'com.android.support:appcompat-v7:25.3.1'
     compile 'com.android.support:multidex:1.0.1'
     ...
 }
@@ -97,26 +97,42 @@ import NearbyConnection from 'react-native-google-nearby-connection';
 Starting the discovery service
 
 ```javascript
-NearbyConnection.startDiscovering();
+NearbyConnection.startDiscovering(
+	serviceId                // A unique identifier for the service
+);
 ```
 
 Stopping the discovery service
 
 
 ```javascript
-NearbyConnection.stopDiscovering();
+NearbyConnection.stopDiscovering(serviceId);
+```
+
+Connect to a discovered endpoint
+
+```javascript
+NearbyConnection.connectToEndpoint(
+	endpointName,           // This nodes endpoint name
+	endpointId,             // The nodes endpointId
+)
 ```
 
 Starting the advertising service
 
 ```javascript
-NearbyConnection.startAdvertising();
+NearbyConnection.startAdvertising(
+	endpointName,           // This nodes endpoint name
+	serviceId               // A unique identifier for the service
+);
 ```
 
 Stopping the advertising service
 
 ```javascript
-NearbyConnection.stopAdvertising();
+NearbyConnection.stopAdvertising(
+	serviceId                // A unique identifier for the service
+);
 ```
 
 Open the microphone and broadcast audio to an endpoint
@@ -156,13 +172,23 @@ NearbyConnection.onDiscoveryStarted(() => {
 	// Discovery services has started
 });
 
-NearbyConnection.onDiscoveryStartFailed(() => {
+NearbyConnection.onDiscoveryStartFailed((
+	statusCode 				// The status of the response [See CommonStatusCodes](https://developers.google.com/android/reference/com/google/android/gms/common/api/CommonStatusCodes)
+) => {
 	// Failed to start discovery service
 });
 
 !!! BROKEN - I cannot figure out why this event never fires
 NearbyConnection.onEndpointLost(() => {
 	// Endpoint moved out of range or disconnected
+});
+
+NearbyConnection.onEndpointDiscovered(({
+	endpointId,             // ID of the endpoint wishing to connect
+	endpointName,           // The name of the remote device we're connecting to.
+	serviceId      			// A unique identifier for the service
+}) => {
+	// An endpoint has been discovered we can connect to
 });
 ```
 
@@ -177,7 +203,9 @@ NearbyConnection.onAdvertisingStarted(() => {
 	// Advertising service has started
 });
 
-NearbyConnection.onAdvertisingStartFailed(() => {
+NearbyConnection.onAdvertisingStartFailed((
+	statusCode 				// The status of the response [See CommonStatusCodes](https://developers.google.com/android/reference/com/google/android/gms/common/api/CommonStatusCodes)
+) => {
 	// Failed to start advertising service
 });
 ```
@@ -229,5 +257,12 @@ Nearby.onPayloadUpdate(({
 	payloadHashCode,        // ???
 }) => {
 	// Update on a previously received payload
+});
+
+Nearby.onPayloadUpdate(({
+	endpointId,             // ID of the endpoint wishing to connect
+	statusCode              // The status of the response [See CommonStatusCodes](https://developers.google.com/android/reference/com/google/android/gms/common/api/CommonStatusCodes)
+}) => {
+	// Failed to send a payload
 });
 ```

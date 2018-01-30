@@ -28,6 +28,36 @@ import {
 
 const NearbyEventEmitter = new NativeEventEmitter(NativeModules.NearbyConnection);
 
+export const ConnectionsStatusCodes = {
+	"API_CONNECTION_FAILED_ALREADY_IN_USE": 8050,
+	"MISSING_PERMISSION_ACCESS_COARSE_LOCATION": 8034,
+	"MISSING_PERMISSION_ACCESS_WIFI_STATE": 8032,
+	"MISSING_PERMISSION_BLUETOOTH": 8030,
+	"MISSING_PERMISSION_BLUETOOTH_ADMIN": 8031,
+	"MISSING_PERMISSION_CHANGE_WIFI_STATE": 8033,
+	"MISSING_PERMISSION_RECORD_AUDIO": 8035,
+	"MISSING_SETTING_LOCATION_MUST_BE_ON": 8025,
+	"STATUS_ALREADY_ADVERTISING": 8001,
+	"STATUS_ALREADY_CONNECTED_TO_ENDPOINT": 8003,
+	"STATUS_ALREADY_DISCOVERING": 8002,
+	"STATUS_ALREADY_HAVE_ACTIVE_STRATEGY": 8008,
+	"STATUS_BLUETOOTH_ERROR": 8007,
+	"STATUS_CONNECTION_REJECTED": 8004,
+	"STATUS_ENDPOINT_IO_ERROR": 8012,
+	"STATUS_ENDPOINT_UNKNOWN": 8011,
+	"STATUS_ERROR": 13,
+	"STATUS_NETWORK_NOT_CONNECTED": 8000,
+	"STATUS_NOT_CONNECTED_TO_ENDPOINT": 8005,
+	"STATUS_OK": 0,
+	"STATUS_OUT_OF_ORDER_API_CALL": 8009,
+	"STATUS_PAYLOAD_IO_ERROR": 8013,
+};
+
+export const Strategy = {
+	"P2P_CLUSTER": 0,
+	"P2P_STAR": 1,
+};
+
 class NearbyConnection {
 	// Open the microphone
 	static openMicrophone(endpointId) {
@@ -36,7 +66,7 @@ class NearbyConnection {
 	static closeMicrophone(endpointId) {
 		NativeModules.NearbyConnection.closeMicrophone(endpointId);
 	}
-	
+
 	static startPlayingAudioStream(endpointId) {
 		NativeModules.NearbyConnection.startPlayingAudioStream(endpointId);
 	}
@@ -45,22 +75,22 @@ class NearbyConnection {
 	}
 
 	// Start/Stop Advertise
-	static startAdvertising() {
-		NativeModules.NearbyConnection.startAdvertising();
+	static startAdvertising(localEndpointName, serviceId, strategy = Strategy.P2P_CLUSTER) {
+		NativeModules.NearbyConnection.startAdvertising(localEndpointName, serviceId, strategy);
 	}
-	static stopAdvertising() {
-		NativeModules.NearbyConnection.stopAdvertising();
+	static stopAdvertising(serviceId) {
+		NativeModules.NearbyConnection.stopAdvertising(serviceId);
 	}
 	static isAdvertising() {
 		NativeModules.NearbyConnection.isAdvertising();
 	}
 
 	// Start/Stop Discover
-	static startDiscovering() {
-		NativeModules.NearbyConnection.startDiscovering();
+	static startDiscovering(serviceId, strategy = Strategy.P2P_CLUSTER) {
+		NativeModules.NearbyConnection.startDiscovering(serviceId, strategy);
 	}
-	static stopDiscovering() {
-		NativeModules.NearbyConnection.stopDiscovering();
+	static stopDiscovering(serviceId) {
+		NativeModules.NearbyConnection.stopDiscovering(serviceId);
 	}
 	static isDiscovering() {
 		NativeModules.NearbyConnection.isDiscovering();
@@ -75,8 +105,8 @@ class NearbyConnection {
 	}
 
 	// Connect or Disconnect
-	static connectToEndpoint(endpointId) {
-		NativeModules.NearbyConnection.connectToEndpoint(endpointId);
+	static connectToEndpoint(endpointName, endpointId) {
+		NativeModules.NearbyConnection.connectToEndpoint(endpointName, endpointId);
 	}
 	static disconnectFromEndpoint(endpointId) {
 		NativeModules.NearbyConnection.disconnectFromEndpoint(endpointId);
@@ -132,6 +162,9 @@ class NearbyConnection {
 	}
 	static onPayloadUpdate(listener) {
 		return NearbyEventEmitter.addListener('payload_update', listener);
+	}
+	static onSendPayloadFailed(listener) {
+		return NearbyEventEmitter.addListener('send_payload_failed', listener);
 	}
 }
 
