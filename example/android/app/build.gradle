@@ -138,6 +138,8 @@ android {
 }
 
 dependencies {
+    compile project(':react-native-vector-icons')
+    compile project(':react-native-image-picker')
     compile fileTree(dir: "libs", include: ["*.jar"])
     compile "com.facebook.react:react-native:+"  // From node_modules
     compile 'com.google.android.gms:play-services-nearby:11.8.0'

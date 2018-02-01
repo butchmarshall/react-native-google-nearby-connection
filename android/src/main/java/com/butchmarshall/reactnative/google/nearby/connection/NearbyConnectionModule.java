@@ -18,11 +18,15 @@ import com.facebook.react.bridge.ReactContextBaseJavaModule;
 import com.facebook.react.bridge.Callback;
 import com.facebook.react.bridge.ReadableMap;
 import com.facebook.react.bridge.WritableMap;
+import com.facebook.react.bridge.WritableArray;
 import com.facebook.react.bridge.NativeModule;
 import com.facebook.react.bridge.ReactApplicationContext;
 import com.facebook.react.bridge.ReactContext;
 import com.facebook.react.bridge.ReactMethod;
+
 import android.app.Activity;
+
+import android.net.Uri;
 
 import android.content.Intent;
 import android.content.Context;
@@ -75,12 +79,13 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
-import java.io.ByteArrayOutputStream;
+import java.io.*;
+/*import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
-import java.io.InputStream;
+import java.io.InputStream;*/
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -128,45 +133,36 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 	/** True if we are advertising. */
 	private boolean mIsAdvertising = false;
 
-	private ConnectionsClient mConnectionsClient = null;
+	private final Map<String, ConnectionsClient> mConnectionsClients = new HashMap<>();
 
 	/** The devices we've discovered near us. */
-	private final Map<String, Endpoint> mDiscoveredEndpoints = new HashMap<>();
+	private final Map<String, Endpoint> mEndpoints = new HashMap<>();
 
-	/**
-	 * The devices we have pending connections to. They will stay pending until we call {@link
-	 * #acceptConnection(Endpoint)} or {@link #rejectConnection(Endpoint)}.
-	 */
-	private final Map<String, Endpoint> mPendingConnections = new HashMap<>();
+	/** For recording audio as the user speaks. */
+	private final Map<String, AudioRecorder> mRecorders = new HashMap<>();
 
-	/**
-	 * The devices we are currently connected to. For advertisers, this may be large. For discoverers,
-	 * there will only be one entry in this map.
-	 */
-	private final Map<String, Endpoint> mEstablishedConnections = new HashMap<>();
-	
 	private final Map<String, Payload> mReceivedPayloads = new HashMap<>();
 	private final Map<String, AudioPlayer> mAudioPlayers = new HashMap<>();
 
 	/** Callbacks for connections to other devices. */
-	private ConnectionLifecycleCallback getConnectionLifecycleCallback() {
+	private ConnectionLifecycleCallback getConnectionLifecycleCallback(final String serviceId, final String type) {
 		final ConnectionLifecycleCallback mConnectionLifecycleCallback = new ConnectionLifecycleCallback() {
 			@Override
 			public void onConnectionInitiated(String endpointId, ConnectionInfo connectionInfo) {
 				logD(
 					String.format(
-						"onConnectionInitiated(endpointId=%s, endpointName=%s)",
-						endpointId, connectionInfo.getEndpointName()));
+						"onConnectionInitiated(serviceId=%s, endpointId=%s, endpointName=%s)",
+						serviceId, endpointId, connectionInfo.getEndpointName()));
 
-				Endpoint endpoint = new Endpoint(endpointId, connectionInfo.getEndpointName());
-				mPendingConnections.put(endpointId, endpoint);
+				Endpoint endpoint = new Endpoint(serviceId, endpointId, connectionInfo.getEndpointName(), type);
+				mEndpoints.put(serviceId+"_"+endpointId, endpoint);
 
-				connectionInitiatedToEndpoint(endpoint, connectionInfo);
+				connectionInitiatedToEndpoint(serviceId, endpointId, connectionInfo);
 			}
 
 			@Override
 			public void onConnectionResult(String endpointId, ConnectionResolution result) {
-				logD(String.format("onConnectionResponse(endpointId=%s, result=%s)", endpointId, result));
+				logD(String.format("onConnectionResponse(serviceId=%s, endpointId=%s, result=%s)", serviceId, endpointId, result));
 
 				// We're no longer connecting
 				mIsConnecting = false;
@@ -177,22 +173,25 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 							"Connection failed. Received status %s.",
 							NearbyConnectionModule.statusToString(result.getStatus())));
 
-					mPendingConnections.remove(endpointId);
-					endpointConnectionFailed(endpointId, result.getStatus().getStatusCode());
+					endpointConnectionFailed(serviceId, endpointId, result.getStatus().getStatusCode());
 					return;
 				}
-				connectedToEndpoint(mPendingConnections.remove(endpointId));
+				connectedToEndpoint(serviceId, endpointId);
 			}
 
 			@Override
 			public void onDisconnected(String endpointId) {
-				if (!mEstablishedConnections.containsKey(endpointId)) {
-					logW("Unexpected disconnection from endpoint " + endpointId);
+				logD(String.format("onDisconnected(serviceId=%s, endpointId=%s)", serviceId, endpointId));
+
+				// TODO FIX THIS
+				if (!mEndpoints.containsKey(serviceId+"_"+endpointId) || !mEndpoints.get(serviceId+"_"+endpointId).isConnected()) {
+					logW("Unexpected disconnection from serviceId "+serviceId+" and endpoint " + endpointId);
 
 					return;
 				}
+				closeMicrophone(serviceId, endpointId);
 
-				disconnectedFromEndpoint(mEstablishedConnections.get(endpointId));
+				disconnectedFromEndpoint(serviceId, endpointId);
 			}
 		};
 
@@ -200,13 +199,23 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 	}
 	
 	/** Callbacks for payloads (bytes of data) sent from another device to us. */
-	private final PayloadCallback mPayloadCallback =
-		new PayloadCallback() {
+	private PayloadCallback getPayloadCallback(final String serviceId) {
+		final PayloadCallback mPayloadCallback = new PayloadCallback() {
 			@Override
 			public void onPayloadReceived(String endpointId, Payload payload) {
-				logD(String.format("onPayloadReceived(endpointId=%s, payload=%s)", endpointId, payload));
+				String payloadId = Long.toString(payload.getId());
+				int payloadType = payload.getType();
 
-				onReceivePayload(mEstablishedConnections.get(endpointId), payload);
+				logD(String.format("onPayloadReceived(endpointId=%s, payload=%s, id=%s, type=%s)", endpointId, payload, payloadId, payload.getType()));
+
+				mReceivedPayloads.put(serviceId+"_"+endpointId+"_"+payloadId, payload);
+
+				// Got an audio stream - start playing immediately
+				/*if (payloadType == Payload.Type.STREAM) {
+					startPlayingAudioStream(serviceId, endpointId, payloadId);
+				}*/
+
+				onReceivePayload(serviceId, endpointId, payload);
 			}
 
 			@Override
@@ -215,9 +224,12 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 					String.format(
 						"onPayloadTransferUpdate(endpointId=%s, update=%s)", endpointId, update));
 
-				onPayloadUpdate(endpointId, update);
+				onPayloadUpdate(serviceId, endpointId, update);
 			}
 		};
+
+		return mPayloadCallback;
+	};
 
 	private EndpointDiscoveryCallback getEndpointDiscoveryCallback(final String serviceId) {
 		final EndpointDiscoveryCallback mEndpointDiscoveryCallback = new EndpointDiscoveryCallback() {
@@ -229,9 +241,10 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
                         endpointId, info.getServiceId(), info.getEndpointName()));
 
 				if (serviceId.equals(info.getServiceId())) {
-					Endpoint endpoint = new Endpoint(endpointId, info.getEndpointName());
-					mDiscoveredEndpoints.put(endpointId, endpoint);
-					onEndpointDiscovered(info.getEndpointName(), serviceId, endpoint);
+					Endpoint endpoint = new Endpoint(serviceId, endpointId, info.getEndpointName(), "discovering");
+					mEndpoints.put(serviceId+"_"+endpointId, endpoint);
+
+					onEndpointDiscovered(serviceId, endpointId);
 				}
 			}
 
@@ -239,7 +252,7 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 			public void onEndpointLost(String endpointId) {
 				logD(String.format("onEndpointLost(endpointId=%s)", endpointId));
 
-				onEndpointLost(endpointId);
+				endpointLost(serviceId, endpointId);
 			}
 		};
 
@@ -251,7 +264,7 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 		this.reactContext = reactContext;
 
 		onResume();
-		
+
 		setLifecycleListeners();
     }
 
@@ -272,6 +285,7 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 		registerEndpointConnectionFailedHandler();
 		registerOnReceivePayloadHandler();
 		registerOnPayloadUpdateHandler();
+		registerSendPayloadFailedHandler();
 	}
 	
 	private void onPause() {
@@ -291,12 +305,23 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 		unregisterEndpointConnectionFailedHandler();
 		unregisterOnReceivePayloadHandler();
 		unregisterOnPayloadUpdateHandler();
+		unregisterSendPayloadFailedHandler();
 	}
 	
 	private void onDestroy() {
 		
 	}
-	
+
+	@Override
+	public void onCatalystInstanceDestroy() {
+		logW("onCatalystInstanceDestroy");
+		for (ConnectionsClient mConnectionsClient : mConnectionsClients.values()) {
+			mConnectionsClient.stopDiscovery();
+			mConnectionsClient.stopAdvertising();
+			mConnectionsClient.stopAllEndpoints();
+		}
+	}
+
     private void setLifecycleListeners() {
 
         this.reactContext.addLifecycleEventListener(new LifecycleEventListener() {
@@ -321,11 +346,15 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
     }
 
 	/** Called when our Activity is first created. */
-	protected ConnectionsClient getConnectionsClientSingleton() {
+	protected ConnectionsClient getConnectionsClientSingleton(final String serviceId) {
+		ConnectionsClient mConnectionsClient = mConnectionsClients.get(serviceId);
 		if (mConnectionsClient == null) {
+			logV("No ConnectionsClient exists for " + serviceId + ", initializing");
+
 			final Activity currentActivity = getCurrentActivity();
 
 			mConnectionsClient = Nearby.getConnectionsClient(currentActivity);
+			mConnectionsClients.put(serviceId, mConnectionsClient);
 		}
 
 		return mConnectionsClient;
@@ -345,10 +374,26 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 
     }
 
+	/**
+	 * Get all the services discovered by this device
+	 */
 	@ReactMethod
-	public void rejectConnection(String endpointId) {
+	public void endpoints(final Promise promise) {
+		WritableArray result = Arguments.createArray();
+
+		for (Endpoint endpoint : mEndpoints.values()) {
+			result.pushMap(endpoint.toWritableMap());
+		}
+
+		promise.resolve(result);
+	}
+
+	@ReactMethod
+	public void rejectConnection(final String serviceId, final String endpointId) {
+		final Endpoint endpoint = mEndpoints.get(serviceId+"_"+endpointId);
+
 		logV("rejecting connection from " + endpointId);
-		final ConnectionsClient clientSingleton = getConnectionsClientSingleton();
+		final ConnectionsClient clientSingleton = getConnectionsClientSingleton(serviceId);
 
 		clientSingleton
 			.rejectConnection(endpointId)
@@ -364,19 +409,21 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 	}
 
 	@ReactMethod
-	public void acceptConnection(String endpointId) {
-		logV("accepting connection to " + endpointId);
-		final ConnectionsClient clientSingleton = getConnectionsClientSingleton();
+	public void acceptConnection(final String serviceId, final String endpointId) {
+		final Endpoint endpoint = mEndpoints.get(serviceId+"_"+endpointId);
+
+		logV("acceptConnection(serviceId: "+serviceId+", endpointId:" + endpointId+")");
+		final ConnectionsClient clientSingleton = getConnectionsClientSingleton(serviceId);
 
 		clientSingleton
-			.acceptConnection(endpointId, mPayloadCallback)
+			.acceptConnection(endpointId, getPayloadCallback(serviceId))
 			.addOnFailureListener(
 				new OnFailureListener() {
 					@Override
 					public void onFailure(@NonNull Exception e) {
 						ApiException apiException = (ApiException) e;
 
-						logW("acceptConnection() failed.", e);
+						logW("acceptConnection(serviceId: "+serviceId+", endpointId:" + endpointId+") failed.", e);
 					}
 				});
 	}
@@ -384,7 +431,7 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 	@ReactMethod
 	protected void startAdvertising(final String endpointName, final String serviceId, final int strategy) {
 		mIsAdvertising = true;
-		onAdvertisingStarting();
+		onAdvertisingStarting(endpointName, serviceId);
 
 		Strategy finalStrategy = Strategy.P2P_CLUSTER;
 		switch(strategy) {
@@ -395,7 +442,7 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 		}
 
 		final Activity activity = getCurrentActivity();
-		final ConnectionsClient clientSingleton = getConnectionsClientSingleton();
+		final ConnectionsClient clientSingleton = getConnectionsClientSingleton(serviceId);
 		final AdvertisingOptions advertisingOptions =  new AdvertisingOptions(finalStrategy);
 
         permissionsCheck(activity, Arrays.asList(getRequiredPermissions()), new Callable<Void>() {
@@ -405,7 +452,7 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 					.startAdvertising(
 						endpointName,
 						serviceId,
-						getConnectionLifecycleCallback(),
+						getConnectionLifecycleCallback(serviceId, "advertised"),
 						advertisingOptions
 					)
 					.addOnSuccessListener(
@@ -413,7 +460,7 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 							@Override
 							public void onSuccess(Void unusedResult) {
 								logV("Now advertising endpoint " + endpointName + " with serviceId " + serviceId);
-								onAdvertisingStarted();
+								onAdvertisingStarted(endpointName, serviceId);
 							}
 						}
 					)
@@ -424,8 +471,8 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 								ApiException apiException = (ApiException) e;
 
 								mIsAdvertising = false;
-								logW("startAdvertising for serviceId "+ serviceId +" failed.", e);
-								onAdvertisingStartFailed(apiException.getStatusCode());
+								logW("startAdvertising for endpointName "+ endpointName +" serviceId "+ serviceId +" failed.", e);
+								onAdvertisingStartFailed(endpointName, serviceId, apiException.getStatusCode());
 							}
 						}
 					);
@@ -437,12 +484,12 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 
 	/** Stops discovery. */
 	@ReactMethod
-	public void stopAdvertising(String serviceId) {
-		final ConnectionsClient clientSingleton = getConnectionsClientSingleton();
+	public void stopAdvertising(final String serviceId) {
+		final ConnectionsClient clientSingleton = getConnectionsClientSingleton(serviceId);
 
 		logV("Stopping advertising endpoint " + serviceId);
 
-		mIsDiscovering = false;
+		mIsAdvertising = false;
 		clientSingleton.stopAdvertising();
 	}
 
@@ -455,7 +502,7 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 	@ReactMethod
 	public void startDiscovering(final String serviceId, final int strategy) {
 		mIsDiscovering = true;
-		mDiscoveredEndpoints.clear();
+		onDiscoveryStarting(serviceId);
 
 		Strategy finalStrategy = Strategy.P2P_CLUSTER;
 		switch(strategy) {
@@ -466,7 +513,7 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 		}
 
 		final Activity activity = getCurrentActivity();
-		final ConnectionsClient clientSingleton = getConnectionsClientSingleton();
+		final ConnectionsClient clientSingleton = getConnectionsClientSingleton(serviceId);
 		final DiscoveryOptions discoveryOptions = new DiscoveryOptions(finalStrategy);
 
         permissionsCheck(activity, Arrays.asList(getRequiredPermissions()), new Callable<Void>() {
@@ -481,7 +528,7 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 						@Override
 						public void onSuccess(Void unusedResult) {
 							logV("Now discovering for serviceId "+ serviceId);
-							onDiscoveryStarted();
+							onDiscoveryStarted(serviceId);
 						}
 					}
 				).addOnFailureListener(
@@ -492,7 +539,7 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 
 							mIsDiscovering = false;
 							logW("startDiscovering for serviceId "+serviceId+" failed.", e);
-							onDiscoveryStartFailed(apiException.getStatusCode());
+							onDiscoveryStartFailed(serviceId, apiException.getStatusCode());
 						}
 					}
 				);
@@ -505,7 +552,7 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 	/** Stops discovery. */
 	@ReactMethod
 	public void stopDiscovering(String serviceId) {
-		final ConnectionsClient clientSingleton = getConnectionsClientSingleton();
+		final ConnectionsClient clientSingleton = getConnectionsClientSingleton(serviceId);
 
 		logV("Stopping discovering endpoints " + serviceId);
 
@@ -523,15 +570,17 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 	@ReactMethod
 	public boolean isConnecting() {
 		return mIsConnecting;
-	}	
+	}
 
 	/**
 	 * Called when advertising starting
 	 */
-	private void onAdvertisingStarting() {
+	private void onAdvertisingStarting(final String endpointName, final String serviceId) {
 		// Broadcast endpoint discovered
 		Intent i = new Intent("com.butchmarshall.reactnative.google.nearby.connection.AdvertisingStarting");
 		Bundle bundle = new Bundle();
+		bundle.putString("endpointName", endpointName);
+		bundle.putString("serviceId", serviceId);
 		i.putExtras(bundle);
 
 		final Activity activity = getCurrentActivity();
@@ -542,7 +591,14 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 		@Override
 		public void onReceive(Context context, Intent intent) {
 			if (getReactApplicationContext().hasActiveCatalystInstance()) {
-				sendEvent(getReactApplicationContext(), "advertising_starting", null);
+				String endpointName = intent.getStringExtra("endpointName");
+				String serviceId = intent.getStringExtra("serviceId");
+
+				WritableMap out = Arguments.createMap();
+				out.putString("endpointName", endpointName);
+				out.putString("serviceId", serviceId);
+
+				sendEvent(getReactApplicationContext(), "advertising_starting", out);
 			}
 		}
 	};
@@ -557,10 +613,12 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 	/**
 	 * Called when advertising started
 	 */
-	private void onAdvertisingStarted() {
+	private void onAdvertisingStarted(final String endpointName, final String serviceId) {
 		// Broadcast endpoint discovered
 		Intent i = new Intent("com.butchmarshall.reactnative.google.nearby.connection.AdvertisingStarted");
 		Bundle bundle = new Bundle();
+		bundle.putString("endpointName", endpointName);
+		bundle.putString("serviceId", serviceId);
 		i.putExtras(bundle);
 
 		final Activity activity = getCurrentActivity();
@@ -571,7 +629,14 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 		@Override
 		public void onReceive(Context context, Intent intent) {
 			if (getReactApplicationContext().hasActiveCatalystInstance()) {
-				sendEvent(getReactApplicationContext(), "advertising_started", null);
+				String endpointName = intent.getStringExtra("endpointName");
+				String serviceId = intent.getStringExtra("serviceId");
+
+				WritableMap out = Arguments.createMap();
+				out.putString("endpointName", endpointName);
+				out.putString("serviceId", serviceId);
+
+				sendEvent(getReactApplicationContext(), "advertising_started", out);
 			}
 		}
 	};
@@ -586,11 +651,13 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 	/**
 	 * Called when advertising failed to start
 	 */
-	private void onAdvertisingStartFailed(int statusCode) {
+	private void onAdvertisingStartFailed(final String endpointName, final String serviceId, final int statusCode) {
 		// Broadcast endpoint discovered
 		Intent i = new Intent("com.butchmarshall.reactnative.google.nearby.connection.AdvertisingStartFailed");
 		Bundle bundle = new Bundle();
 		bundle.putInt("statusCode", statusCode);
+		bundle.putString("endpointName", endpointName);
+		bundle.putString("serviceId", serviceId);
 		i.putExtras(bundle);
 
 		final Activity activity = getCurrentActivity();
@@ -602,7 +669,15 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 		public void onReceive(Context context, Intent intent) {
 			if (getReactApplicationContext().hasActiveCatalystInstance()) {
 				int statusCode = intent.getIntExtra("statusCode", -1);
-				sendEvent(getReactApplicationContext(), "advertising_start_failed", statusCode);
+				String endpointName = intent.getStringExtra("endpointName");
+				String serviceId = intent.getStringExtra("serviceId");
+
+				WritableMap out = Arguments.createMap();
+				out.putInt("statusCode", statusCode);
+				out.putString("endpointName", endpointName);
+				out.putString("serviceId", serviceId);
+
+				sendEvent(getReactApplicationContext(), "advertising_start_failed", out);
 			}
 		}
 	};
@@ -617,10 +692,11 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 	/**
 	 * Called when discovery starting
 	 */
-	private void onDiscoveryStarting() {
+	private void onDiscoveryStarting(final String serviceId) {
 		// Broadcast endpoint discovered
 		Intent i = new Intent("com.butchmarshall.reactnative.google.nearby.connection.DiscoveryStarting");
 		Bundle bundle = new Bundle();
+		bundle.putString("serviceId", serviceId);
 		i.putExtras(bundle);
 
 		final Activity activity = getCurrentActivity();
@@ -631,7 +707,12 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 		@Override
 		public void onReceive(Context context, Intent intent) {
 			if (getReactApplicationContext().hasActiveCatalystInstance()) {
-				sendEvent(getReactApplicationContext(), "discovery_starting", null);
+				String serviceId = intent.getStringExtra("serviceId");
+
+				WritableMap out = Arguments.createMap();
+				out.putString("serviceId", serviceId);
+
+				sendEvent(getReactApplicationContext(), "discovery_starting", out);
 			}
 		}
 	};
@@ -646,10 +727,11 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 	/**
 	 * Called when discovery started
 	 */
-	private void onDiscoveryStarted() {
+	private void onDiscoveryStarted(final String serviceId) {
 		// Broadcast endpoint discovered
 		Intent i = new Intent("com.butchmarshall.reactnative.google.nearby.connection.DiscoveryStarted");
 		Bundle bundle = new Bundle();
+		bundle.putString("serviceId", serviceId);
 		i.putExtras(bundle);
 
 		final Activity activity = getCurrentActivity();
@@ -660,7 +742,12 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 		@Override
 		public void onReceive(Context context, Intent intent) {
 			if (getReactApplicationContext().hasActiveCatalystInstance()) {
-				sendEvent(getReactApplicationContext(), "discovery_started", null);
+				String serviceId = intent.getStringExtra("serviceId");
+
+				WritableMap out = Arguments.createMap();
+				out.putString("serviceId", serviceId);
+
+				sendEvent(getReactApplicationContext(), "discovery_started", out);
 			}
 		}
 	};
@@ -675,10 +762,11 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 	/**
 	 * Called when discovery started
 	 */
-	private void onDiscoveryStartFailed(int statusCode) {
+	private void onDiscoveryStartFailed(final String serviceId, int statusCode) {
 		Intent i = new Intent("com.butchmarshall.reactnative.google.nearby.connection.DiscoveryStartFailed");
 		Bundle bundle = new Bundle();
 		bundle.putInt("statusCode", statusCode);
+		bundle.putString("serviceId", serviceId);
 		i.putExtras(bundle);
 
 		final Activity activity = getCurrentActivity();
@@ -690,7 +778,13 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 		public void onReceive(Context context, Intent intent) {
 			if (getReactApplicationContext().hasActiveCatalystInstance()) {
 				int statusCode = intent.getIntExtra("statusCode", -1);
-				sendEvent(getReactApplicationContext(), "discovery_start_failed", statusCode);
+				String serviceId = intent.getStringExtra("serviceId");
+
+				WritableMap out = Arguments.createMap();
+				out.putInt("statusCode", statusCode);
+				out.putString("serviceId", serviceId);
+
+				sendEvent(getReactApplicationContext(), "discovery_start_failed", out);
 			}
 		}
 	};
@@ -705,19 +799,17 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 	/**
 	 * Called when a payload was received
 	 */
-	private void onReceivePayload(Endpoint endpoint, Payload payload) {
-		String endpointId = endpoint.getId();
+	private void onReceivePayload(final String serviceId, final String endpointId, Payload payload) {
 		int payloadType = payload.getType();
 		long payloadId = payload.getId();
-
-		mReceivedPayloads.put(endpointId, payload);
 
 		// Broadcast endpoint discovered
 		Intent i = new Intent("com.butchmarshall.reactnative.google.nearby.connection.ReceivePayload");
 		Bundle bundle = new Bundle();
+		bundle.putString("serviceId", serviceId);
 		bundle.putString("endpointId", endpointId);
 		bundle.putInt("payloadType", payloadType);
-		bundle.putLong("payloadId", payloadId);
+		bundle.putString("payloadId", Long.toString(payloadId));
 /*
 		if (payloadType == Payload.Type.FILE) {
 			long payloadSize = payload.getSize();
@@ -734,14 +826,16 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 		@Override
 		public void onReceive(Context context, Intent intent) {
 			if (getReactApplicationContext().hasActiveCatalystInstance()) {
+				String serviceId = intent.getStringExtra("serviceId");
 				String endpointId = intent.getStringExtra("endpointId");
 				int payloadType = intent.getIntExtra("payloadType", -1);
-				long payloadId = intent.getLongExtra("payloadId", -1);
+				String payloadId = intent.getStringExtra("payloadId");
 
 				WritableMap out = Arguments.createMap();
+				out.putString("serviceId", serviceId);
 				out.putString("endpointId", endpointId);
 				out.putInt("payloadType", payloadType);
-				out.putDouble("payloadId", payloadId);
+				out.putString("payloadId", payloadId);
 
 				if (payloadType == Payload.Type.FILE) {
 					long payloadSize = intent.getLongExtra("payloadSize", -1);
@@ -763,7 +857,7 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 	/**
 	 * Called when there is an update to a payload
 	 */
-	private void onPayloadUpdate(String endpointId, PayloadTransferUpdate update) {
+	private void onPayloadUpdate(final String serviceId, final String endpointId, PayloadTransferUpdate update) {
 		long bytesTransferred = update.getBytesTransferred();
 		long totalBytes = update.getTotalBytes();
 		long payloadId = update.getPayloadId();
@@ -771,12 +865,13 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 		int payloadHashCode = update.hashCode();
 
 		// Broadcast endpoint discovered
-		Intent i = new Intent("com.butchmarshall.reactnative.google.nearby.connection.ReceivePayload");
+		Intent i = new Intent("com.butchmarshall.reactnative.google.nearby.connection.PayloadUpdate");
 		Bundle bundle = new Bundle();
+		bundle.putString("serviceId", serviceId);
 		bundle.putString("endpointId", endpointId);
 		bundle.putLong("bytesTransferred", bytesTransferred);
 		bundle.putLong("totalBytes", totalBytes);
-		bundle.putLong("payloadId", payloadId);
+		bundle.putString("payloadId", Long.toString(payloadId));
 		bundle.putInt("payloadStatus", payloadStatus);
 		bundle.putInt("payloadHashCode", payloadHashCode);
 		i.putExtras(bundle);
@@ -789,22 +884,24 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 		@Override
 		public void onReceive(Context context, Intent intent) {
 			if (getReactApplicationContext().hasActiveCatalystInstance()) {
+				String serviceId = intent.getStringExtra("serviceId");
 				String endpointId = intent.getStringExtra("endpointId");
 				long bytesTransferred = intent.getLongExtra("bytesTransferred", -1);
 				long totalBytes = intent.getLongExtra("totalBytes", -1);
-				long payloadId = intent.getLongExtra("payloadId", -1);
+				String payloadId = intent.getStringExtra("payloadId");
 				int payloadStatus = intent.getIntExtra("payloadStatus", -1);
 				int payloadHashCode = intent.getIntExtra("payloadHashCode", -1);
 
 				WritableMap out = Arguments.createMap();
+				out.putString("serviceId", serviceId);
 				out.putString("endpointId", endpointId);
 				out.putDouble("bytesTransferred", bytesTransferred);
 				out.putDouble("totalBytes", totalBytes);
-				out.putDouble("payloadId", payloadId);
+				out.putString("payloadId", payloadId);
 				out.putInt("payloadStatus", payloadStatus);
 				out.putInt("payloadHashCode", payloadHashCode);
 
-				sendEvent(getReactApplicationContext(), "payload_update", out);
+				sendEvent(getReactApplicationContext(), "payload_transfer_update", out);
 			}
 		}
 	};
@@ -817,13 +914,70 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 	}
 
 	/**
+	 * Called when sending payload fails
+	 */
+	private void onSendPayloadFailed(final String serviceId, final String endpointId, Payload payload, int statusCode) {
+		int payloadType = payload.getType();
+		long payloadId = payload.getId();
+
+		// Broadcast endpoint discovered
+		Intent i = new Intent("com.butchmarshall.reactnative.google.nearby.connection.SendPayloadFailed");
+		Bundle bundle = new Bundle();
+		bundle.putString("serviceId", serviceId);
+		bundle.putString("endpointId", endpointId);
+		bundle.putInt("statusCode", statusCode);
+		bundle.putInt("payloadType", payloadType);
+		bundle.putString("payloadId", Long.toString(payloadId));
+
+		i.putExtras(bundle);
+
+		final Activity activity = getCurrentActivity();
+		activity.sendBroadcast(i);
+	}
+
+	private BroadcastReceiver mSendPayloadFailedReceiver = new BroadcastReceiver() {
+		@Override
+		public void onReceive(Context context, Intent intent) {
+			if (getReactApplicationContext().hasActiveCatalystInstance()) {
+				String serviceId = intent.getStringExtra("serviceId");
+				String endpointId = intent.getStringExtra("endpointId");
+				int statusCode = intent.getIntExtra("statusCode", -1);
+				int payloadType = intent.getIntExtra("payloadType", -1);
+				String payloadId = intent.getStringExtra("payloadId");
+
+				WritableMap out = Arguments.createMap();
+				out.putString("serviceId", serviceId);
+				out.putString("endpointId", endpointId);
+				out.putInt("statusCode", statusCode);
+				out.putInt("payloadType", payloadType);
+				out.putString("payloadId", payloadId);
+
+				sendEvent(getReactApplicationContext(), "send_payload_failed", out);
+			}
+		}
+	};
+	private void unregisterSendPayloadFailedHandler() {
+		getReactApplicationContext().unregisterReceiver(mSendPayloadFailedReceiver);
+	}
+	private void registerSendPayloadFailedHandler() {
+		IntentFilter intentFilter = new IntentFilter("com.butchmarshall.reactnative.google.nearby.connection.SendPayloadFailed");
+		getReactApplicationContext().registerReceiver(mSendPayloadFailedReceiver, intentFilter);
+	}
+	
+	/**
 	 * Called when connecting to an endpoint failed
 	 */
-	private void endpointConnectionFailed(final String endpointId, final int statusCode) {
+	private void endpointConnectionFailed(final String serviceId, final String endpointId, final int statusCode) {
+		Endpoint endpoint = mEndpoints.get(serviceId+"_"+endpointId);
+
+		String endpointName = endpoint.getName();
+
 		// Broadcast endpoint discovered
 		Intent i = new Intent("com.butchmarshall.reactnative.google.nearby.connection.EndpointConnectionFailed");
 		Bundle bundle = new Bundle();
 		bundle.putString("endpointId", endpointId);
+		bundle.putString("endpointName", endpointName);
+		bundle.putString("serviceId", serviceId);
 		bundle.putInt("statusCode", statusCode);
 		i.putExtras(bundle);
 
@@ -836,10 +990,14 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 		public void onReceive(Context context, Intent intent) {
 			if (getReactApplicationContext().hasActiveCatalystInstance()) {
 				String endpointId = intent.getStringExtra("endpointId");
+				String endpointName = intent.getStringExtra("endpointName");
+				String serviceId = intent.getStringExtra("serviceId");
 				int statusCode = intent.getIntExtra("statusCode", -1);
 
 				WritableMap out = Arguments.createMap();
 				out.putString("endpointId", endpointId);
+				out.putString("endpointName", endpointName);
+				out.putString("serviceId", serviceId);
 				out.putInt("statusCode", statusCode);
 
 				sendEvent(getReactApplicationContext(), "endpoint_connection_failed", out);
@@ -857,21 +1015,25 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 	/**
 	 * Called when disconnected from an endpoint 
 	 */
-	private void disconnectedFromEndpoint(Endpoint endpoint) {
+	private void disconnectedFromEndpoint(final String serviceId, final String endpointId) {
+		final Endpoint endpoint = mEndpoints.get(serviceId+"_"+endpointId);
+		
 		if (endpoint == null) {
 			logD("disconnectedFromEndpoint unknown endpoint");
 			return;
 		}
 		logD(String.format("disconnectedFromEndpoint(endpoint=%s)", endpoint));
 
-		String endpointId = endpoint.getId();
+		String endpointName = endpoint.getName();
 
-		mEstablishedConnections.remove(endpointId);
+		endpoint.setConnected(false);
 
 		// Broadcast endpoint discovered
 		Intent i = new Intent("com.butchmarshall.reactnative.google.nearby.connection.DisconnectedFromEndpoint");
 		Bundle bundle = new Bundle();
 		bundle.putString("endpointId", endpointId);
+		bundle.putString("endpointName", endpointName);
+		bundle.putString("serviceId", serviceId);
 		i.putExtras(bundle);
 
 		final Activity activity = getCurrentActivity();
@@ -883,7 +1045,14 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 		public void onReceive(Context context, Intent intent) {
 			if (getReactApplicationContext().hasActiveCatalystInstance()) {
 				String endpointId = intent.getStringExtra("endpointId");
-				sendEvent(getReactApplicationContext(), "disconnected_from_endpoint", endpointId);
+				String endpointName = intent.getStringExtra("endpointName");
+				String serviceId = intent.getStringExtra("serviceId");
+
+				WritableMap out = Arguments.createMap();
+				out.putString("endpointId", endpointId);
+				out.putString("endpointName", endpointName);
+				out.putString("serviceId", serviceId);
+				sendEvent(getReactApplicationContext(), "disconnected_from_endpoint", out);
 			}
 		}
 	};
@@ -898,17 +1067,21 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 	/**
 	 * Called when connected to a nearby advertiser 
 	 */
-	private void connectedToEndpoint(Endpoint endpoint) {
+	private void connectedToEndpoint(final String serviceId, final String endpointId) {
+		final Endpoint endpoint = mEndpoints.get(serviceId+"_"+endpointId);
+
 		logD(String.format("connectedToEndpoint(endpoint=%s)", endpoint));
 
-		String endpointId = endpoint.getId();
+		String endpointName = endpoint.getName();
 
-		mEstablishedConnections.put(endpointId, endpoint);
+		endpoint.setConnected(true);
 
 		// Broadcast endpoint discovered
 		Intent i = new Intent("com.butchmarshall.reactnative.google.nearby.connection.ConnectedToEndpoint");
 		Bundle bundle = new Bundle();
 		bundle.putString("endpointId", endpointId);
+		bundle.putString("endpointName", endpointName);
+		bundle.putString("serviceId", serviceId);
 		i.putExtras(bundle);
 
 		final Activity activity = getCurrentActivity();
@@ -920,7 +1093,15 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 		public void onReceive(Context context, Intent intent) {
 			if (getReactApplicationContext().hasActiveCatalystInstance()) {
 				String endpointId = intent.getStringExtra("endpointId");
-				sendEvent(getReactApplicationContext(), "connected_to_endpoint", endpointId);
+				String endpointName = intent.getStringExtra("endpointName");
+				String serviceId = intent.getStringExtra("serviceId");
+
+				WritableMap out = Arguments.createMap();
+				out.putString("endpointId", endpointId);
+				out.putString("endpointName", endpointName);
+				out.putString("serviceId", serviceId);
+				
+				sendEvent(getReactApplicationContext(), "connected_to_endpoint", out);
 			}
 		}
 	};
@@ -935,8 +1116,9 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 	/**
 	 * Called when a connection to a nearby advertiser is initiated
 	 */
-	private void connectionInitiatedToEndpoint(Endpoint endpoint, final ConnectionInfo connectionInfo) {
-		String endpointId = endpoint.getId();
+	private void connectionInitiatedToEndpoint(final String serviceId, final String endpointId, final ConnectionInfo connectionInfo) {
+		final Endpoint endpoint = mEndpoints.get(serviceId+"_"+endpointId);
+
 		String authenticationToken = connectionInfo.getAuthenticationToken();
 		String endpointName = connectionInfo.getEndpointName();
 		Boolean incomingConnection = connectionInfo.isIncomingConnection();
@@ -945,8 +1127,9 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 		Intent i = new Intent("com.butchmarshall.reactnative.google.nearby.connection.ConnectionInitiatedToEndpoint");
 		Bundle bundle = new Bundle();
 		bundle.putString("endpointId", endpointId);
-		bundle.putString("authenticationToken", authenticationToken);
 		bundle.putString("endpointName", endpointName);
+		bundle.putString("serviceId", serviceId);
+		bundle.putString("authenticationToken", authenticationToken);
 		bundle.putBoolean("incomingConnection", incomingConnection);
 		i.putExtras(bundle);
 
@@ -959,14 +1142,16 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 		public void onReceive(Context context, Intent intent) {
 			if (getReactApplicationContext().hasActiveCatalystInstance()) {
 				String endpointId = intent.getStringExtra("endpointId");
-				String authenticationToken = intent.getStringExtra("authenticationToken");
 				String endpointName = intent.getStringExtra("endpointName");
+				String serviceId = intent.getStringExtra("serviceId");
+				String authenticationToken = intent.getStringExtra("authenticationToken");
 				Boolean incomingConnection = intent.getBooleanExtra("incomingConnection", false);
 
 				WritableMap out = Arguments.createMap();
 				out.putString("endpointId", endpointId);
-				out.putString("authenticationToken", authenticationToken);
 				out.putString("endpointName", endpointName);
+				out.putString("serviceId", serviceId);
+				out.putString("authenticationToken", authenticationToken);
 				out.putBoolean("incomingConnection", incomingConnection);
 
 				sendEvent(getReactApplicationContext(), "connection_initiated_to_endpoint", out);
@@ -984,11 +1169,17 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 	/**
 	 * Called when a nearby endpoint is lost
 	 */
-	private void onEndpointLost(String endpointId) {
+	private void endpointLost(final String serviceId, final String endpointId) {
+		final Endpoint endpoint = mEndpoints.get(serviceId+"_"+endpointId);
+
+		String endpointName = endpoint.getName();
+		
 		// Broadcast endpoint discovered
 		Intent i = new Intent("com.butchmarshall.reactnative.google.nearby.connection.EndPointLost");
 		Bundle bundle = new Bundle();
 		bundle.putString("endpointId", endpointId);
+		bundle.putString("serviceId", serviceId);
+		bundle.putString("endpointName", endpointName);
 		i.putExtras(bundle);
 
 		final Activity activity = getCurrentActivity();
@@ -1000,7 +1191,15 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 		public void onReceive(Context context, Intent intent) {
 			if (getReactApplicationContext().hasActiveCatalystInstance()) {
 				String endpointId = intent.getStringExtra("endpointId");
-				sendEvent(getReactApplicationContext(), "endpoint_lost", endpointId);
+				String endpointName = intent.getStringExtra("endpointName");
+				String serviceId = intent.getStringExtra("serviceId");
+
+				WritableMap out = Arguments.createMap();
+				out.putString("endpointId", endpointId);
+				out.putString("endpointName", endpointName);
+				out.putString("serviceId", serviceId);
+
+				sendEvent(getReactApplicationContext(), "endpoint_lost", out);
 			}
 		}
 	};
@@ -1015,10 +1214,13 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 	/**
 	 * Called when a remote endpoint is discovered.
      */
-	private void onEndpointDiscovered(String endpointName, String serviceId, Endpoint endpoint) {
+	private void onEndpointDiscovered(final String serviceId, final String endpointId) {
+		final Endpoint endpoint = mEndpoints.get(serviceId+"_"+endpointId);
+
+		String endpointName = endpoint.getName();
+
 		// We found an advertiser!
-		stopDiscovering(serviceId);
-		String endpointId = endpoint.getId();
+		// stopDiscovering(serviceId); - should we actually stop discovering?  Maybe more peeps!
 
 		// Broadcast endpoint discovered
 		Intent i = new Intent("com.butchmarshall.reactnative.google.nearby.connection.EndPointDiscovered");
@@ -1058,72 +1260,39 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 	}
 
 	/**
-	 * Called when sending payload fails
-	 */
-	private void onSendPayloadFailed(Payload payload, String endpointId, int statusCode) {
-		// We found an advertiser!
-
-		// Broadcast endpoint discovered
-		Intent i = new Intent("com.butchmarshall.reactnative.google.nearby.connection.SendPayloadFailed");
-		Bundle bundle = new Bundle();
-		bundle.putString("endpointId", endpointId);
-		bundle.putInt("statusCode", statusCode);
-
-		i.putExtras(bundle);
-
-		final Activity activity = getCurrentActivity();
-		activity.sendBroadcast(i);
-	}
-
-	private BroadcastReceiver mSendPayloadFailedReceiver = new BroadcastReceiver() {
-		@Override
-		public void onReceive(Context context, Intent intent) {
-			if (getReactApplicationContext().hasActiveCatalystInstance()) {
-				String endpointId = intent.getStringExtra("endpointId");
-				int statusCode = intent.getIntExtra("statusCode", -1);
-
-				WritableMap out = Arguments.createMap();
-				out.putString("endpointId", endpointId);
-				out.putInt("statusCode", statusCode);
-
-				sendEvent(getReactApplicationContext(), "send_payload_failed", out);
-			}
-		}
-	};
-	private void unregisterSendPayloadFailedHandler() {
-		getReactApplicationContext().unregisterReceiver(mEndpointDiscoveredReceiver);
-	}
-	private void registerSendPayloadFailedHandler() {
-		IntentFilter intentFilter = new IntentFilter("com.butchmarshall.reactnative.google.nearby.connection.SendPayloadFailed");
-		getReactApplicationContext().registerReceiver(mSendPayloadFailedReceiver, intentFilter);
-	}
-
-	/**
 	 * Sends a connection request to the endpoint. Either {@link #onConnectionInitiated(Endpoint,
 	 * ConnectionInfo)} or {@link #onConnectionFailed(Endpoint)} will be called once we've found out
 	 * if we successfully reached the device.
 	 */
 	@ReactMethod
-	public void connectToEndpoint(String endpointName, final String endpointId) {
-		logV("Sending a connection request to endpoint " + endpointId);
+	public void connectToEndpoint(final String serviceId, final String endpointId) {
+		final Endpoint endpoint = mEndpoints.get(serviceId+"_"+endpointId);
+		if (endpoint == null) {
+			logW("connectToEndpoint failed to service "+serviceId+" and endpoint "+endpointId+", could not find endpoint");
+			return;
+		}
 
-		final ConnectionsClient clientSingleton = getConnectionsClientSingleton();
+		final String endpointName = endpoint.getName();
+
+		logV("connectToEndpoint request to service "+serviceId+" and endpoint " + endpointId);
+
+		final ConnectionsClient clientSingleton = getConnectionsClientSingleton(serviceId);
 
 		// Mark ourselves as connecting so we don't connect multiple times
 		mIsConnecting = true;
 
 		// Ask to connect
 		clientSingleton
-			.requestConnection(endpointName, endpointId, getConnectionLifecycleCallback())
+			.requestConnection(endpointName, endpointId, getConnectionLifecycleCallback(serviceId, "discovering"))
 			.addOnFailureListener(
 				new OnFailureListener() {
 					@Override
 					public void onFailure(@NonNull Exception e) {
 						ApiException apiException = (ApiException) e;
 
-						logW("requestConnection() failed.", e);
+						logW("connectToEndpoint to service "+serviceId+" and endpoint " + endpointId+" failed.", e);
 						mIsConnecting = false;
-						endpointConnectionFailed(endpointId, apiException.getStatusCode());
+						endpointConnectionFailed(serviceId, endpointId, apiException.getStatusCode());
 					}
 				}
 			);
@@ -1131,17 +1300,95 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 
 	/** Disconnects from the given endpoint. */
 	@ReactMethod
-	public void disconnectFromEndpoint(String endpointId) {
-		final ConnectionsClient clientSingleton = getConnectionsClientSingleton();
+	public void disconnectFromEndpoint(final String serviceId, final String endpointId) {
+		final Endpoint endpoint = mEndpoints.get(serviceId+"_"+endpointId);
+		if (endpoint == null) {
+			logW("disconnectFromEndpoint failed from service "+serviceId+" and endpoint "+endpointId);
+			return;
+		}
+
+		final ConnectionsClient clientSingleton = getConnectionsClientSingleton(serviceId);
 
 		clientSingleton.disconnectFromEndpoint(endpointId);
 
-		disconnectedFromEndpoint(mEstablishedConnections.get(endpointId));
+		disconnectedFromEndpoint(serviceId, endpointId);
 	}
 
-	/** Send sound from the microphone and streaming it to all connected devices. */
+	/** Send a file to a connected device. */
 	@ReactMethod
-	public void openMicrophone(final String endpointId) {
+	public void sendFile(final String serviceId, final String endpointId, final String path) {
+		Uri uri = Uri.parse(path);
+
+		logV("sendFile to service "+serviceId+" and endpoint " + endpointId + ", "+ uri);
+
+		try
+		{
+		//final Activity activity = getCurrentActivity();
+
+		// Open the ParcelFileDescriptor for this URI with read access.
+		ParcelFileDescriptor pfd = getReactApplicationContext().getContentResolver().openFileDescriptor(uri, "r");
+		Payload filePayload = Payload.fromFile(pfd);
+
+		// Construct a simple message mapping the ID of the file payload to the desired filename.
+		String payloadFilenameMessage = filePayload.getId() + ":" + uri.getLastPathSegment();
+
+		sendPayload(serviceId, endpointId, Payload.fromBytes(payloadFilenameMessage.getBytes("UTF-8")));
+		sendPayload(serviceId, endpointId, filePayload);
+		}
+		catch (FileNotFoundException ex)  
+		{
+			logV("sendFile error 1.");
+		}
+		catch(IOException e){
+			logV("sendFile error 2.");
+		}
+	}
+
+	/** File a file to a uri. */
+	@ReactMethod
+	public void readBytes(final String serviceId, final String endpointId, final String payloadId, final Promise promise) {
+		logV("readBytes from service "+serviceId+" and endpoint " + endpointId + " and payload "+Long.parseLong(payloadId, 10)+" ");
+
+		Payload payload = mReceivedPayloads.get(serviceId+"_"+endpointId+"_"+Long.parseLong(payloadId, 10));
+		if (payload == null) {
+			logV("Cannot find payload.");
+			return;
+		}
+		if (payload.getType() != Payload.Type.BYTES) {
+			logV("Cannot get, not bytes.");
+			return;
+		}
+	
+		try {
+			String bytes = new String(payload.asBytes(), "UTF-8");
+			promise.resolve(bytes);
+		}
+		catch (UnsupportedEncodingException ex) {
+			promise.reject("");
+		}
+	}
+
+	/** File a file to a uri. */
+	@ReactMethod
+	public void saveFile(final String serviceId, final String endpointId, final String payloadId, final String path) {
+		logV("saveFile from service "+serviceId+" and endpoint " + endpointId + " and payload "+payloadId+" to path "+path);
+
+		Payload payload = mReceivedPayloads.get(serviceId+"_"+endpointId+"_"+payloadId);
+		if (payload == null) {
+			logV("Cannot find payload.");
+			return;
+		}
+		if (payload.getType() != Payload.Type.FILE) {
+			logV("Cannot save, not a file.");
+			return;
+		}
+	}
+
+	/** Send sound from the microphone and stream to a connected device. */
+	@ReactMethod
+	public void openMicrophone(final String serviceId, final String endpointId) {
+		logV("openMicrophone to service "+serviceId+" and endpoint " + endpointId);
+
 		final Activity activity = getCurrentActivity();
 
 		permissionsCheck(activity, Arrays.asList(getRequiredAudioPermissions()), new Callable<Void>() {
@@ -1151,13 +1398,17 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 					ParcelFileDescriptor[] payloadPipe = ParcelFileDescriptor.createPipe();
 
 					// Send the first half of the payload (the read side) to Nearby Connections.
-					sendPayload(Payload.fromStream(payloadPipe[0]), endpointId);
+					sendPayload(serviceId, endpointId, Payload.fromStream(payloadPipe[0]));
 
 					// Use the second half of the payload (the write side) in AudioRecorder.
-					mRecorder = new AudioRecorder(payloadPipe[1]);
-					mRecorder.start();
+					AudioRecorder recorder = new AudioRecorder(payloadPipe[1]);
+
+					mRecorders.put(serviceId+"_"+endpointId, recorder);
+
+					recorder.start();
 				}
 				catch (IOException e) {
+					logW("openMicrophone error", e);
 				}
 
 				return null;
@@ -1165,13 +1416,28 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 		});
 	}
 
+	/** Stops streaming sound from the microphone. */
+	@ReactMethod
+	private void closeMicrophone(final String serviceId, String endpointId) {
+		logV("closeMicrophone to service "+serviceId+" and endpoint " + endpointId);
+
+		AudioRecorder recorder = mRecorders.remove(serviceId+"_"+endpointId);
+
+		if (recorder != null) {
+			recorder.stop();
+			recorder = null;
+		}
+	}
+
 	/** Starts streaming sound from an endpoint. */
 	@ReactMethod
-	private void startPlayingAudioStream(final String endpointId) {
-		Payload payload = mReceivedPayloads.get(endpointId);
+	private void startPlayingAudioStream(final String serviceId, final String endpointId, final String payloadId) {
+		logV("startPlayingAudioStream from service "+serviceId+" and endpoint " + endpointId + " and payload "+payloadId);
+
+		Payload payload = mReceivedPayloads.get(serviceId+"_"+endpointId+"_"+payloadId);
 
 		if (payload.getType() != Payload.Type.STREAM) {
-			Log.d(TAG, "startPlayingAudioStream failure.  Not a stream.");
+			logV("startPlayingAudioStream from service "+serviceId+" and endpoint " + endpointId +" and payload "+payloadId+" failure.  Not a stream.");
 			return;
 		}
 		final Activity activity = getCurrentActivity();
@@ -1185,29 +1451,23 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 						@UiThread
 						@Override
 						public void run() {
-							mAudioPlayers.remove(endpointId);
+							logV("audioPlayer onFinish "+serviceId+" and endpoint " + endpointId + " and payload "+payloadId);
+							mAudioPlayers.remove(serviceId+"_"+endpointId+"_"+payloadId);
 						}
 					}
 				);
 			}
 		};
-		mAudioPlayers.put(endpointId, player);
+		mAudioPlayers.put(serviceId+"_"+endpointId+"_"+payloadId, player);
 
 		player.start();
 	}
 
-	/** Stops streaming sound from the microphone. */
 	@ReactMethod
-	private void closeMicrophone(String endpointId) {
-		if (mRecorder != null) {
-			mRecorder.stop();
-			mRecorder = null;
-		}
-	}
+	private void stopPlayingAudioStream(final String serviceId, String endpointId, final String payloadId) {
+		logV("stopPlayingAudioStream from service "+serviceId+" and endpoint " + endpointId + " and payload "+payloadId);
 
-	@ReactMethod
-	private void stopPlayingAudioStream(String endpointId) {
-		AudioPlayer player = mAudioPlayers.remove(endpointId);
+		AudioPlayer player = mAudioPlayers.remove(serviceId+"_"+endpointId+"_"+payloadId);
 		if (player == null) {
 			return;
 		}
@@ -1275,6 +1535,7 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
                         try {
                             callback.call();
                         } catch (Exception e) {
+							logV("permissionsCheck error.");
                         }
                     }
 
@@ -1289,6 +1550,7 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
         try {
             callback.call();
         } catch (Exception e) {
+			logV("permissionsCheck error.");
         }
     }
 
@@ -1297,8 +1559,8 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 	 *
 	 * @param payload The data you want to send.
 	 */
-	protected void sendPayload(final Payload payload, final String endpointId) {
-		final ConnectionsClient clientSingleton = getConnectionsClientSingleton();
+	protected void sendPayload(final String serviceId, final String endpointId, final Payload payload) {
+		final ConnectionsClient clientSingleton = getConnectionsClientSingleton(serviceId);
 
 		clientSingleton
 			.sendPayload(endpointId, payload)
@@ -1310,7 +1572,7 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 
 						logW("sendPayload() failed.", e);
 
-						onSendPayloadFailed(payload, endpointId, apiException.getStatusCode());
+						onSendPayloadFailed(serviceId, endpointId, payload, apiException.getStatusCode());
 					}
 				});
 	}
@@ -1324,7 +1586,7 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 				.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
 				.emit(eventName, body);
 		} else {
-			//Log.d(TAG, "Missing context - cannot send event!");
+			Log.v(TAG, "Missing context - cannot send event!");
 		}
 	}
 
@@ -1371,14 +1633,54 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 
 	/** Represents a device we can talk to. */
 	protected static class Endpoint {
+		@NonNull private final String serviceId;
 		@NonNull private final String id;
 		@NonNull private final String name;
+		@NonNull private final String type;
+		@NonNull private Boolean connected;
 
-		private Endpoint(@NonNull String id, @NonNull String name) {
-		  this.id = id;
-		  this.name = name;
+		private Endpoint(@NonNull String serviceId, @NonNull String id, @NonNull String name, @NonNull String type) {
+			this.serviceId = serviceId;
+			this.id = id;
+			this.name = name;
+			this.type = type;
+			this.connected = false;
 		}
 
+		public WritableMap toWritableMap() {
+			WritableMap out = Arguments.createMap();
+
+			out.putString("serviceId", serviceId);
+			out.putString("endpointId", id);
+			out.putString("endpointName", name);
+			out.putBoolean("connected", connected);
+			out.putString("type", type);
+
+			return out;
+		}
+		
+		public void setConnected(final Boolean newValue) {
+			this.connected = newValue;
+		}
+
+		@NonNull
+		public Boolean isConnected() {
+			return connected;
+		}
+
+		/**
+		 * Discovered or advertised
+		 */
+		@NonNull
+		public String getType() {
+			return type;
+		}
+
+		@NonNull
+		public String getServiceId() {
+			return serviceId;
+		}
+		
 		@NonNull
 		public String getId() {
 			return id;

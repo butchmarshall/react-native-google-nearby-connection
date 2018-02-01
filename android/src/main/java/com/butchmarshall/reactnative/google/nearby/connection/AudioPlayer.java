@@ -71,7 +71,7 @@ public class AudioPlayer {
 					} catch (IOException e) {
 						Log.e(TAG, "Exception with playing stream", e);
 					} finally {
-						stopInternal();
+						//closeStream();
 						audioTrack.release();
 						onFinish();
 					}
@@ -80,8 +80,7 @@ public class AudioPlayer {
 		mThread.start();
 	}
 	
-	private void stopInternal() {
-		mAlive = false;
+	private void closeStream() {
 		try {
 			mInputStream.close();
 		} catch (IOException e) {
@@ -91,7 +90,8 @@ public class AudioPlayer {
 	
 	/** Stops playing the stream. */
 	public void stop() {
-		stopInternal();
+		mAlive = false;
+		//closeStream();
 		try {
 			mThread.join();
 		} catch (InterruptedException e) {
