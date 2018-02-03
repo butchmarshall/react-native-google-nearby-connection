@@ -19,7 +19,6 @@
     "preset": "react-native"
   },
   "dependencies": {
-    "native-base": "^2.3.7",
     "react": "16.2.0",
     "react-native": "0.52.0",
     "react-native-google-nearby-connection": "file:../",
