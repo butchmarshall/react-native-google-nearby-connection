@@ -1,53 +1,111 @@
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
 
 import {
 	NativeEventEmitter,
 	NativeModules,
 	TouchableHighlight,
+	StyleSheet,
 	Switch,
+	View,
+	Text as Native_Text,
+	ToastAndroid,
 } from 'react-native';
 
+import Prompt from 'react-native-prompt';
+import ImagePicker from 'react-native-image-picker';
+
+import RandomWords from 'random-words';
+import Immutable from 'immutable';
+
 import {
-	COLOR, ThemeProvider,
-	Button, ListItem, Subheader,
-} from 'react-native-material-ui';
+	Container,
+	Content,
+	Header,
+	Title, Left, Body, Right,
+	Card, CardItem,
+	Button, Text, Icon,
+} from 'native-base';
 
-import Nearby, { ConnectionsStatusCodes, Strategy } from 'react-native-google-nearby-connection';
+import Nearby, { ConnectionsStatusCodes, Strategy, PayloadTransferUpdate } from 'react-native-google-nearby-connection';
 
-const uiTheme = {
-    palette: {
-        primaryColor: COLOR.green500,
-    },
-    toolbar: {
-        container: {
-            height: 50,
-        },
-    },
-};
+import DiscoveringList from './src/components/discovering_list';
+import AdvertisingList from './src/components/advertising_list';
 
-const localEndpointName = "NearbyConnectionExampleApp";
-const serviceId = "my.local.connection.example.application";
+const Service = new Immutable.Record({
+	serviceId: undefined,
+	endpointName: undefined,
+	advertising: 'no',
+	discovering: 'no',
+	endpoints: Immutable.List([]),
+});
+
+
+const Endpoint = new Immutable.Record({
+	id: undefined,
+	name: undefined,
+	serviceId: undefined,
+	incomingConnection: false,
+	authenticationToken: undefined,
+	state: 'disconnected',
+	microphone_open: false,
+	payloads: Immutable.Map({}),
+});
+
+const Payload = new Immutable.Record({
+	serviceId: undefined,
+	endpointId: undefined,
+	payloadType: undefined,
+	payloadId: undefined,
+	payloadStatus: undefined,
+	totalBytes: undefined,
+	bytesTransferred: undefined,
+	payloadHashCode: undefined,
+	playing: false
+});
 
 export default class App extends React.Component {
 	constructor(props) {
 		super(props);
 
 		this.state = {
-			discovering: 'no',
-			advertising: 'no',
-
-			discovered_endpointIds: [],
-			initiated_endpointIds: [],
-			connected_endpointIds: [],
-			microphone_endpointIds: [],
-			playing_endpointIds: [],
-			payload_endpointIds: {},
+			showCreateService: false,
+			showDiscoverService: false,
+			advertising: Immutable.List([]),
+			discovering: Immutable.List([]),
 		};
 
 		this.subscribed_events = [];
 	}
 
+	shouldComponentUpdate(nextProps, nextState) {
+		if (nextState.showCreateService != this.state.showCreateService) {
+			console.log("shouldComponentUpdate A");
+			return true;
+		}
+		if (nextState.showDiscoverService != this.state.showDiscoverService) {
+			console.log("shouldComponentUpdate B");
+			return true;
+		}
+		if (nextState.advertising != this.state.advertising) {
+			console.log("shouldComponentUpdate C");
+			return true;
+		}
+		if (nextState.discovering != this.state.discovering) {
+			console.log("shouldComponentUpdate D");
+			return true;
+		}
+
+		return false;
+	}
+
+	componentWillMount() {
+		Nearby.endpoints().then(
+			(endpoints) => {
+				console.log("endpoints", endpoints);
+			}
+		);
+	}
+	
 	componentWillUnmount() {
 		this.subscribed_events.forEach((event) => {
 			event.remove();
@@ -58,130 +116,409 @@ export default class App extends React.Component {
 	componentDidMount() {
 		// Discovery
 		this.subscribed_events.push(
-			Nearby.onDiscoveryStarting(() => {
-				console.log("onDiscoveryStarting");
+			Nearby.onDiscoveryStarting(({serviceId}) => {
+				ToastAndroid.showWithGravity("onDiscoveryStarting("+serviceId+")", ToastAndroid.SHORT, ToastAndroid.CENTER);
+
+				const discovering = this.state.discovering.map((service) => {
+					if (service.serviceId == serviceId) {
+						service = service.set("discovering", "starting");
+					}
+
+					return service;
+				});
+
 				this.setState({
-					discovering: 'starting',
-				})
-			})
-		);
-		this.subscribed_events.push(
-			Nearby.onDiscoveryStarted(() => {
-				console.log("onDiscoveryStarted");
-				this.setState({
-					discovering: 'yes',
+					discovering: discovering,
 				});
 			})
 		);
 		this.subscribed_events.push(
-			Nearby.onDiscoveryStartFailed((statusCode) => {
-				console.log("onDiscoveryStartFailed");
+			Nearby.onDiscoveryStarted(({serviceId}) => {
+				ToastAndroid.showWithGravity("onDiscoveryStarted("+serviceId+")", ToastAndroid.SHORT, ToastAndroid.CENTER);
+
+				const discovering = this.state.discovering.map((service) => {
+					if (service.serviceId == serviceId) {
+						service = service.set("discovering", "yes");
+					}
+
+					return service;
+				});
 
 				this.setState({
-					discovering: (statusCode === ConnectionsStatusCodes.STATUS_ALREADY_DISCOVERING)? 'yes' : 'no',
+					discovering: discovering,
+				});
+			})
+		);
+		this.subscribed_events.push(
+			Nearby.onDiscoveryStartFailed(({serviceId,statusCode}) => {
+				ToastAndroid.showWithGravity("onDiscoveryStartFailed("+serviceId+","+statusCode+")", ToastAndroid.SHORT, ToastAndroid.CENTER);
+
+				const discovering = this.state.discovering.map((service) => {
+					if (service.serviceId == serviceId) {
+						service = service.set("discovering", "no");
+					}
+
+					return service;
+				});
+
+				this.setState({
+					discovering: discovering,
 				});
 			})
 		);
 
 		// Advertising
 		this.subscribed_events.push(
-			Nearby.onAdvertisingStarting(() => {
-				console.log("onAdvertisingStarting");
-				this.setState({
-					advertising: 'starting',
+			Nearby.onAdvertisingStarting(({endpointName,serviceId}) => {
+				ToastAndroid.showWithGravity("onAdvertisingStarting("+endpointName+","+serviceId+")", ToastAndroid.SHORT, ToastAndroid.CENTER);
+
+				const advertising = this.state.advertising.map((service) => {
+					if (service.serviceId == serviceId && service.endpointName == endpointName) {
+						service = service.set("advertising", "starting");
+					}
+
+					return service;
 				});
-			})
-		);
-		this.subscribed_events.push(
-			Nearby.onAdvertisingStarted(() => {
-				console.log("onAdvertisingStarted");
-				this.setState({
-					advertising: 'yes',
-				});
-			})
-		);
-		this.subscribed_events.push(
-			Nearby.onAdvertisingStartFailed((statusCode) => {
 
 				this.setState({
-					advertising: (statusCode === ConnectionsStatusCodes.STATUS_ALREADY_ADVERTISING)? 'yes' : 'no',
+					advertising: advertising,
+				});
+			})
+		);
+		this.subscribed_events.push(
+			Nearby.onAdvertisingStarted(({endpointName, serviceId}) => {
+				ToastAndroid.showWithGravity("onAdvertisingStarted("+endpointName+","+serviceId+")", ToastAndroid.SHORT, ToastAndroid.CENTER);
+
+				const advertising = this.state.advertising.map((service) => {
+					if (service.serviceId == serviceId && service.endpointName == endpointName) {
+						service = service.set("advertising", "yes");
+					}
+
+					return service;
+				});
+
+				this.setState({
+					advertising: advertising,
+				});
+			})
+		);
+		this.subscribed_events.push(
+			Nearby.onAdvertisingStartFailed(({endpointName, serviceId, statusCode}) => {
+				ToastAndroid.showWithGravity("onAdvertisingStartFailed("+endpointName+","+serviceId+","+statusCode+")", ToastAndroid.SHORT, ToastAndroid.CENTER);
+
+				const advertising = this.state.advertising.map((service) => {
+					if (service.serviceId == serviceId && service.endpointName == endpointName) {
+						service = service.set("advertising", "no");
+					}
+
+					return service;
+				});
+
+				this.setState({
+					advertising: advertising,
 				});
 			})
 		);
 
 		// Payload
 		this.subscribed_events.push(
-			Nearby.onReceivePayload((result) => {
-				console.log("onReceivePayload", result);
-				let payload_endpointIds = {...this.state.payload_endpointIds};
-				payload_endpointIds[result.endpointId] = result;
+			Nearby.onReceivePayload(({serviceId,endpointId,payloadType,payloadId}) => {
+				console.log("onReceivePayload("+serviceId+","+endpointId+","+payloadType+","+payloadId+")");
+
+				const discovering = this.state.discovering.map((service) => {
+					if (service.serviceId == serviceId) {
+						const endpoints = service.endpoints.map((endpoint) => {
+							if (endpoint.id === endpointId) {
+								const payloads = endpoint.get("payloads").set(payloadId,new Payload({payloadType,payloadId,playing:false}));
+								endpoint = endpoint.set("payloads",payloads);
+							}
+
+							return endpoint;
+						});
+
+						service = service.set("endpoints", endpoints);
+					}
+
+					return service;
+				});
+				const advertising = this.state.advertising.map((service) => {
+					if (service.serviceId == serviceId) {
+						const endpoints = service.endpoints.map((endpoint) => {
+							if (endpoint.id === endpointId) {
+								const payloads = endpoint.get("payloads").set(payloadId,new Payload({payloadType,payloadId,playing:false}));
+								endpoint = endpoint.set("payloads",payloads);
+							}
+
+							return endpoint;
+						});
+
+						service = service.set("endpoints", endpoints);
+					}
+
+					return service;
+				});
 
 				this.setState({
-					payload_endpointIds: payload_endpointIds,
+					discovering: discovering,
+					advertising: advertising,
 				});
 			})
 		);
 		this.subscribed_events.push(
-			Nearby.onPayloadUpdate((result) => {
-				console.log("onPayloadUpdate", result);
+			Nearby.onPayloadTransferUpdate((result) => {
+				const {
+					serviceId,
+					endpointId,
+					payloadId,
+				} = result;
+				console.log("onPayloadTransferUpdate("+JSON.stringify(result)+")");
+
+				let discovering = this.state.discovering;
+				discovering.forEach((service, discovering_index) => {
+					if (service.serviceId == serviceId) {
+						let endpoints = service.endpoints;
+
+						endpoints.forEach((endpoint, endpoint_index) => {
+							if (endpoint.id === endpointId) {
+								let payloads = endpoint.get("payloads");
+
+								payloads.forEach((payload, k) => {
+									if (k === payloadId) {
+										//if (payload.payloadType === Payload.STREAM) {
+											delete result.bytesTransferred;
+											delete result.payloadHashCode;
+										//}
+
+										for(var key in result) {
+											payload = payload.set(key, result[key]);
+										}
+									}
+									payloads = payloads.set(k, payload);
+								});
+								endpoint = endpoint.set("payloads",payloads);
+
+								endpoints = endpoints.set(endpoint_index, endpoint);
+							}
+						});
+
+						service = service.set("endpoints", endpoints);
+
+						discovering = discovering.set(discovering_index, service)
+					}
+				});
+
+				let advertising = this.state.advertising;
+				advertising.forEach((service, advertising_index) => {
+					if (service.serviceId == serviceId) {
+						let endpoints = service.endpoints;
+
+						endpoints.forEach((endpoint, endpoint_index) => {
+							if (endpoint.id === endpointId) {
+								let payloads = endpoint.get("payloads");
+
+								payloads.forEach((payload, k) => {
+									if (k === payloadId) {
+										//if (payload.payloadType === Payload.STREAM) {
+											delete result.bytesTransferred;
+											delete result.payloadHashCode;
+										//}
+
+										for(var key in result) {
+											payload = payload.set(key, result[key]);
+										}
+									}
+									payloads = payloads.set(k, payload);
+								});
+								endpoint = endpoint.set("payloads",payloads);
+
+								endpoints = endpoints.set(endpoint_index, endpoint);
+							}
+						});
+
+						service = service.set("endpoints", endpoints);
+
+						advertising = advertising.set(advertising_index, service)
+					}
+				});
+
+				this.setState({
+					discovering: discovering,
+					advertising: advertising,
+				});
 			})
 		);
 
 		// Connection
 		this.subscribed_events.push(
-			Nearby.onConnectionInitiatedToEndpoint(({endpointId,authenticationToken,endpointName,incomingConnection}) => {
-				console.log("onConnectionInitiatedToEndpoint",endpointId,authenticationToken,endpointName,incomingConnection);
-				if (this.state.initiated_endpointIds.indexOf(endpointId) != -1) {
-					return;
-				}
+			Nearby.onConnectionInitiatedToEndpoint(({serviceId,endpointId,authenticationToken,endpointName,incomingConnection}) => {
+				ToastAndroid.showWithGravity("onConnectionInitiatedToEndpoint("+serviceId+","+endpointId+","+authenticationToken+","+endpointName+","+incomingConnection+")", ToastAndroid.SHORT, ToastAndroid.CENTER);
 
-				const initiated_endpointIds = [endpointId, ...this.state.initiated_endpointIds];
+				var newEndpoint = new Endpoint({
+					id: endpointId,
+					name: endpointName,
+					serviceId: serviceId,
+					authenticationToken: authenticationToken,
+					incomingConnection: incomingConnection,
+				});
+
+				if (incomingConnection) {
+					const advertising = this.state.advertising.map((service) => {
+						if (service.serviceId == serviceId && service.endpointName == endpointName) {
+							service = service.set("endpoints", service.endpoints.push(newEndpoint));
+						}
+
+						return service;
+					});
+
+					this.setState({
+						advertising: advertising,
+					});
+				}
+				else {
+					Nearby.acceptConnection(serviceId, endpointId); // We initated this! ACCEPT IT
+					const discovering = this.state.discovering.map((service) => {
+						if (service.serviceId == serviceId) {
+							const endpoints = service.endpoints.map((endpoint) => {
+								if (endpoint.id === endpointId) {
+									newEndpoint = newEndpoint.set("state", "waiting");
+									endpoint = newEndpoint;
+								}
+
+								return endpoint;
+							})
+
+							service = service.set("endpoints", endpoints);
+						}
+
+						return service;
+					});
+
+					this.setState({
+						discovering: discovering,
+					});
+				}
+			})
+		);
+		this.subscribed_events.push(
+			Nearby.onConnectedToEndpoint(({endpointId,serviceId,endpointName}) => {
+				ToastAndroid.showWithGravity("onConnectedToEndpoint("+serviceId+","+endpointId+","+endpointName+")", ToastAndroid.SHORT, ToastAndroid.CENTER);
+
+				const discovering = this.state.discovering.map((service) => {
+					if (service.serviceId == serviceId) {
+						const endpoints = service.endpoints.map((endpoint) => {
+							if (endpoint.id === endpointId) {
+								endpoint = endpoint.set("state","connected");
+							}
+
+							return endpoint;
+						});
+
+						service = service.set("endpoints", endpoints);
+					}
+
+					return service;
+				});
+				const advertising = this.state.advertising.map((service) => {
+					if (service.serviceId == serviceId && service.endpointName == endpointName) {
+						const endpoints = service.endpoints.map((endpoint) => {
+							if (endpoint.id === endpointId) {
+								endpoint = endpoint.set("state","connected");
+							}
+
+							return endpoint;
+						});
+
+						service = service.set("endpoints", endpoints);
+					}
+
+					return service;
+				});
 
 				this.setState({
-					initiated_endpointIds: initiated_endpointIds,
+					discovering: discovering,
+					advertising: advertising,
 				});
 			})
 		);
 		this.subscribed_events.push(
-			Nearby.onConnectedToEndpoint((endpointId) => {
-				console.log("onConnectedToEndpoint");
-				if (this.state.connected_endpointIds.indexOf(endpointId) != -1) {
-					return;
-				}
+			Nearby.onEndpointConnectionFailed(({endpointId, serviceId, endpointName, statusCode}) => {
+				ToastAndroid.showWithGravity("onEndpointConnectionFailed("+serviceId+","+endpointId+","+endpointName+","+statusCode+")", ToastAndroid.SHORT, ToastAndroid.CENTER);
 
-				const connected_endpointIds = [endpointId, ...this.state.connected_endpointIds];
-				const initiated_endpointIds = [...this.state.initiated_endpointIds];
-				initiated_endpointIds.splice(initiated_endpointIds.indexOf(endpointId), 1);
+				const discovering = this.state.discovering.map((service) => {
+					if (service.serviceId == serviceId) {
+						const endpoints = service.endpoints.map((endpoint) => {
+							if (endpoint.id === endpointId) {
+								endpoint = endpoint.set("state", "disconnected");
+							}
+
+							return endpoint;
+						});
+
+						service = service.set("endpoints", endpoints);
+					}
+
+					return service;
+				});
+				const advertising = this.state.advertising.map((service) => {
+					if (service.serviceId == serviceId && service.endpointName == endpointName) {
+						const endpoints = service.endpoints.filter((endpoint) => {
+							if (endpoint.id === endpointId) {
+								return false;
+							}
+
+							return true;
+						});
+
+						service = service.set("endpoints", endpoints);
+					}
+
+					return service;
+				});
 
 				this.setState({
-					connected_endpointIds: connected_endpointIds,
-					initiated_endpointIds: initiated_endpointIds,
+					discovering: discovering,
+					advertising: advertising,
 				});
 			})
 		);
 		this.subscribed_events.push(
-			Nearby.onEndpointConnectionFailed(({endpointId, statusCode}) => {
-				console.log("onEndpointConnectionFailed", endpointId, statusCode);
-				if (statusCode === ConnectionsStatusCodes.STATUS_ALREADY_CONNECTED_TO_ENDPOINT) {
-					return;
-				}
+			Nearby.onDisconnectedFromEndpoint(({endpointId,serviceId,endpointName}) => {
+				ToastAndroid.showWithGravity("onDisconnectedFromEndpoint("+serviceId+","+endpointId+","+endpointName+")", ToastAndroid.SHORT, ToastAndroid.CENTER);
 
-				const initiated_endpointIds = [...this.state.initiated_endpointIds];
-				initiated_endpointIds.splice(initiated_endpointIds.indexOf(endpointId), 1);
+				const discovering = this.state.discovering.map((service) => {
+					if (service.serviceId == serviceId) {
+						const endpoints = service.endpoints.map((endpoint) => {
+							if (endpoint.id === endpointId) {
+								endpoint = endpoint.set("state", "disconnected");
+							}
 
-				this.setState({
-					initiated_endpointIds: initiated_endpointIds,
+							return endpoint;
+						});
+
+						service = service.set("endpoints", endpoints);
+					}
+
+					return service;
 				});
-			})
-		);
-		this.subscribed_events.push(
-			Nearby.onDisconnectedFromEndpoint((endpointId) => {
-				console.log("onDisconnectedFromEndpoint");
-				const connected_endpointIds = [...this.state.connected_endpointIds];
-				connected_endpointIds.splice(connected_endpointIds.indexOf(endpointId), 1);
+				const advertising = this.state.advertising.map((service) => {
+					if (service.serviceId == serviceId) {
+						const endpoints = service.endpoints.filter((endpoint) => {
+							if (endpoint.id === endpointId) {
+								return false;
+							}
+
+							return true;
+						});
+
+						service = service.set("endpoints", endpoints);
+					}
+
+					return service;
+				});
 
 				this.setState({
-					connected_endpointIds: connected_endpointIds,
+					discovering: discovering,
+					advertising: advertising,
 				});
 			})
 		);
@@ -189,194 +526,455 @@ export default class App extends React.Component {
 		// Discovery
 		this.subscribed_events.push(
 			Nearby.onEndpointDiscovered(({endpointName,serviceId,endpointId}) => {
-				console.log("onEndpointDiscovered", endpointName,serviceId,endpointId);
-				if (this.state.discovered_endpointIds.indexOf(endpointId) != -1) {
-					return;
-				}
-				const discovered_endpointIds = [endpointId, ...this.state.discovered_endpointIds];
+				ToastAndroid.showWithGravity("onEndpointDiscovered("+serviceId+","+endpointId+","+endpointName+")", ToastAndroid.SHORT, ToastAndroid.CENTER);
+
+				var endpoint = new Endpoint({
+					id: endpointId,
+					name: endpointName,
+					serviceId: serviceId,
+				});
+
+				const discovering = this.state.discovering.map((service) => {
+					if (service.serviceId == serviceId) {
+						let found = false;
+						const endpoints = service.endpoints.map((endpoint) => {
+							if (endpoint.id === endpointId) {
+								endpoint = endpoint.set("state", "disconnected");
+								found = true;
+							}
+
+							return endpoint;
+						});
+						if (!found) {
+							endpoints = endpoints.push(endpoint);
+							
+						}
+						service = service.set("endpoints", endpoints);
+					}
+
+					return service;
+				});
 
 				this.setState({
-					discovered_endpointIds: discovered_endpointIds,
+					discovering: discovering,
 				});
+				Nearby.endpoints().then(
+					(endpoints) => {
+						console.log("endpoints", endpoints);
+					}
+				);
 			})
 		);
 		this.subscribed_events.push(
-			Nearby.onEndpointLost((endpointId) => {
-				console.log("onEndpointLost");
-				const discovered_endpointIds = [...this.state.discovered_endpointIds];
-				discovered_endpointIds.splice(discovered_endpointIds.indexOf(endpointId), 1);
+			Nearby.onEndpointLost(({endpointName,serviceId,endpointId}) => {
+				ToastAndroid.showWithGravity("onEndpointLost("+serviceId+","+endpointId+","+endpointName+")", ToastAndroid.SHORT, ToastAndroid.CENTER);
+
+				const discovering = this.state.discovering.map((service) => {
+					if (service.serviceId == serviceId) {
+						const endpoints = service.endpoints.map((endpoint) => {
+							if (endpoint.id === endpointId && endpoint.state === "disconnected") {
+								endpoint = endpoint.set("state", "lost");
+							}
+
+							return endpoint;
+						});
+
+						service = service.set("endpoints", endpoints);
+					}
+
+					return service;
+				});
 
 				this.setState({
-					discovered_endpointIds: discovered_endpointIds,
+					discovering: discovering,
 				});
 			})
 		);
 		
 	}
 
-	handleAcceptConnection = (endpointId) => () => {
-		Nearby.acceptConnection(endpointId);
+	handleAcceptConnection = (serviceId, endpoint) => {
+		Nearby.acceptConnection(serviceId, endpoint.id);
 	}
-	handleRejectConnection = (endpointId) => () => {
-		Nearby.rejectConnection(endpointId);
+	handleRejectConnection = (serviceId, endpoint) => {
+		Nearby.rejectConnection(serviceId, endpoint.id);
 	}
 
-	handleConnectToEndpoint = (endpointId) => () => {
-		Nearby.connectToEndpoint(localEndpointName, endpointId);
+	handleConnectToEndpoint = (serviceId, endpoint) => {
+		Nearby.connectToEndpoint(serviceId, endpoint.id);
 	}
-	handleDisconnectFromEndpoint = (endpointId) => () => {
-		console.log("CALLING disconnectFromEndpoint");
-		Nearby.disconnectFromEndpoint(endpointId);
+	handleDisconnectFromEndpoint = (serviceId, endpoint) => {
+		//console.log("handleDisconnectFromEndpoint", serviceId, endpoint.toJS());
+		Nearby.disconnectFromEndpoint(serviceId, endpoint.id);
 	}
-	
-	handleStartAdvertising = () => {
-		Nearby.startAdvertising(localEndpointName, serviceId);
+
+	handleStartAdvertising = (service) => {
+		Nearby.startAdvertising(service.endpointName, service.serviceId, Strategy.P2P_STAR);
 	}
-	handleStopAdvertising = () => {
+	handleStopAdvertising = (service) => {
+		const serviceId = service.serviceId;
+		const endpointName = service.endpointName;
+
 		Nearby.stopAdvertising(serviceId);
+
+		const advertising = this.state.advertising.map((service) => {
+			if (service.serviceId == serviceId) {
+				service = service.set("advertising", "no");
+			}
+
+			return service;
+		});
+
 		this.setState({
-			advertising: 'no'
+			advertising: advertising,
 		});
 	}
-	
-	handleStartDiscovering = () => {
-		Nearby.startDiscovering(serviceId);
+
+	handleStartDiscovering = (service) => {
+		Nearby.startDiscovering(service.serviceId, Strategy.P2P_STAR);
 	}
-	handleStopDiscovering = () => {
+	handleStopDiscovering = (service) => {
+		//console.log("handleStopDiscovering", service.toJS());
+		const serviceId = service.serviceId;
+
 		Nearby.stopDiscovering(serviceId);
+		const discovering = this.state.discovering.map((service) => {
+			if (service.serviceId == serviceId) {
+				service = service.set("discovering", "no");
+			}
+
+			return service;
+		});
+
 		this.setState({
-			discovering: 'no'
+			discovering: discovering,
 		});
 	}
 
-	handleOpenMicrophone = (endpointId) => () => {
-		Nearby.openMicrophone(endpointId);
-		const microphone_endpointIds = [endpointId, ...this.state.microphone_endpointIds];
+	handleOpenMicrophone = (endpoint) => {
+		const endpointId = endpoint.id;
+		const serviceId = endpoint.serviceId;
+
+		Nearby.openMicrophone(serviceId, endpointId);
+
+		const discovering = this.state.discovering.map((service) => {
+			if (service.serviceId == serviceId) {
+				const endpoints = service.endpoints.map((endpoint) => {
+					if (endpoint.id === endpointId) {
+						endpoint = endpoint.set("microphone_open", true);
+					}
+
+					return endpoint;
+				});
+
+				service = service.set("endpoints", endpoints);
+			}
+
+			return service;
+		});
+		const advertising = this.state.advertising.map((service) => {
+			if (service.serviceId == serviceId) {
+				const endpoints = service.endpoints.map((endpoint) => {
+					if (endpoint.id === endpointId) {
+						endpoint = endpoint.set("microphone_open", true);
+					}
+
+					return endpoint;
+				});
+
+				service = service.set("endpoints", endpoints);
+			}
+
+			return service;
+		});
 
 		this.setState({
-			microphone_endpointIds: microphone_endpointIds,
+			discovering: discovering,
+			advertising: advertising,
 		});
 	}
-	handleCloseMicrophone = (endpointId) => () => {
-		Nearby.closeMicrophone(endpointId);
-		const microphone_endpointIds = [...this.state.microphone_endpointIds];
-		microphone_endpointIds.splice(microphone_endpointIds.indexOf(endpointId), 1);
+	handleCloseMicrophone = (endpoint) => {
+		const endpointId = endpoint.id;
+		const serviceId = endpoint.serviceId;
+
+		Nearby.closeMicrophone(serviceId, endpointId);
+
+		const discovering = this.state.discovering.map((service) => {
+			if (service.serviceId == serviceId) {
+				const endpoints = service.endpoints.map((endpoint) => {
+					if (endpoint.id === endpointId) {
+						endpoint = endpoint.set("microphone_open", false);
+					}
+
+					return endpoint;
+				});
+
+				service = service.set("endpoints", endpoints);
+			}
+
+			return service;
+		});
+		const advertising = this.state.advertising.map((service) => {
+			if (service.serviceId == serviceId) {
+				const endpoints = service.endpoints.map((endpoint) => {
+					if (endpoint.id === endpointId) {
+						endpoint = endpoint.set("microphone_open", false);
+					}
+
+					return endpoint;
+				});
+
+				service = service.set("endpoints", endpoints);
+			}
+
+			return service;
+		});
 
 		this.setState({
-			microphone_endpointIds: microphone_endpointIds,
+			discovering: discovering,
+			advertising: advertising,
 		});
 	}
 
-	handleStartPlayingAudioStream = (endpointId) => () => {
-		Nearby.startPlayingAudioStream(endpointId);
-		const playing_endpointIds = [endpointId, ...this.state.playing_endpointIds];
-
-		this.setState({
-			playing_endpointIds: playing_endpointIds,
+	handleSendFile = (endpoint) => {
+		ImagePicker.showImagePicker({}, (response) => {
+			if (response.didCancel) {
+				console.log('User cancelled image picker');
+			}else if (response.error) {
+				console.log('ImagePicker Error: ', response.error);
+			}
+			else if (response.customButton) {
+				console.log('User tapped custom button: ', response.customButton);
+			}
+			else {
+				Nearby.sendFile(endpoint.serviceId, endpoint.id, response.uri);
+			}
 		});
 	}
-	handleStopPlayingAudioStream = (endpointId) => () => {
-		Nearby.stopPlayingAudioStream(endpointId);
-		const playing_endpointIds = [...this.state.playing_endpointIds];
-		playing_endpointIds.splice(playing_endpointIds.indexOf(endpointId), 1);
+
+	handleStartPlayingAudioStream = (endpoint, payload) => {
+		const serviceId = endpoint.serviceId,
+		endpointId = endpoint.id,
+		payloadId = payload.payloadId;
+
+		Nearby.startPlayingAudioStream(serviceId, endpointId, payloadId);
+
+		const discovering = this.state.discovering.map((service) => {
+			if (service.serviceId == serviceId) {
+				const endpoints = service.endpoints.map((endpoint) => {
+					if (endpoint.id === endpointId) {
+						const payloads = endpoint.get("payloads").set(payloadId,payload.set("playing", true));
+						endpoint = endpoint.set("payloads",payloads);
+					}
+
+					return endpoint;
+				});
+
+				service = service.set("endpoints", endpoints);
+			}
+
+			return service;
+		});
+		const advertising = this.state.advertising.map((service) => {
+			if (service.serviceId == serviceId) {
+				const endpoints = service.endpoints.map((endpoint) => {
+					if (endpoint.id === endpointId) {
+						const payloads = endpoint.get("payloads").set(payloadId,payload.set("playing", true));
+						endpoint = endpoint.set("payloads",payloads);
+					}
+
+					return endpoint;
+				});
+
+				service = service.set("endpoints", endpoints);
+			}
+
+			return service;
+		});
 
 		this.setState({
-			playing_endpointIds: playing_endpointIds,
+			discovering: discovering,
+			advertising: advertising,
+		});
+	}
+	handleStopPlayingAudioStream = (endpoint, payload) => {
+		const serviceId = endpoint.serviceId,
+		endpointId = endpoint.id,
+		payloadId = payload.payloadId;
+
+		Nearby.stopPlayingAudioStream(serviceId, endpointId, payloadId);
+
+		const discovering = this.state.discovering.map((service) => {
+			if (service.serviceId == serviceId) {
+				const endpoints = service.endpoints.map((endpoint) => {
+					if (endpoint.id === endpointId) {
+						const payloads = endpoint.get("payloads").set(payloadId,payload.set("playing", false));
+						endpoint = endpoint.set("payloads",payloads);
+					}
+
+					return endpoint;
+				});
+
+				service = service.set("endpoints", endpoints);
+			}
+
+			return service;
+		});
+		const advertising = this.state.advertising.map((service) => {
+			if (service.serviceId == serviceId) {
+				const endpoints = service.endpoints.map((endpoint) => {
+					if (endpoint.id === endpointId) {
+						const payloads = endpoint.get("payloads").set(payloadId,payload.set("playing", false));
+						endpoint = endpoint.set("payloads",payloads);
+					}
+
+					return endpoint;
+				});
+
+				service = service.set("endpoints", endpoints);
+			}
+
+			return service;
+		});
+
+		this.setState({
+			discovering: discovering,
+			advertising: advertising,
+		});
+	}
+	handleSaveFile = (endpoint, payload) => {
+		
+	}
+	handleReadBytes = (endpoint, payload) => {
+		console.log("handleReadBytes", endpoint.toJS(), payload);
+		Nearby.readBytes(endpoint.serviceId, endpoint.id, payload.payloadId).then(
+			(string) => {
+				console.log("readBytes result: ", string);
+			}
+		)
+	}
+
+	handleAddService = () => {
+		this.setState({
+			showCreateService: true
+		})
+	}
+	handleCancelCreateService = () => {
+		this.setState({
+			showCreateService: false
+		});
+	}
+	handleSubmitCreateService = (value) => {
+		const serviceId = value,
+		endpointName = RandomWords(3).map((word) => {
+			return (word.charAt(0).toUpperCase() + word.slice(1));
+		}).join('');
+
+		this.setState({
+			advertising: this.state.advertising.push(new Service({
+				serviceId: serviceId,
+				endpointName: endpointName,
+			})),
+			showCreateService: false
+		});
+	}
+
+	handleDiscoverService = () => {
+		this.setState({
+			showDiscoverService: true
+		})
+	}
+	handleCancelDiscoverService = () => {
+		this.setState({
+			showDiscoverService: false
+		});
+	}
+	handleSubmitDiscoverService = (value) => {
+		const serviceId = value;
+		this.setState({
+			discovering: this.state.discovering.push(new Service({
+				serviceId: serviceId,
+			})),
+			showDiscoverService: false
 		});
 	}
 
 	render() {
-		console.log(this.state);
+		console.log("--render!");
 		return (
-			<ThemeProvider uiTheme={uiTheme}>
-			<View style={styles.container}>
-				<View style={{flexDirection:'row', alignItems: 'center', justifyContent: 'space-between', padding: 10}}>
-					<Text>Visible to other devices?</Text>
-					<View style={{}}><Switch value={((this.state.advertising !== 'no')? true : false)} onValueChange={((this.state.advertising === 'no')? this.handleStartAdvertising : this.handleStopAdvertising)} /></View>
-				</View>
-				{(() => {
-					if (this.state.discovering !== 'starting') {
-						return (
-							<Button raised primary onPress={((this.state.discovering === 'no')? this.handleStartDiscovering : this.handleStopDiscovering)} text={((this.state.discovering === 'no')? "Find Devices" : "Stop Finding Devices")} />
-						);
-					}
-					return (
-						<Button raised primary text="Starting Discovery" />
-					);
-				})()}
+			<Container>
+				<Prompt
+						title="Create a Service"
+						placeholder="Service ID"
+						defaultValue=""
+						visible={ this.state.showCreateService }
+						onCancel={this.handleCancelCreateService}
+						onSubmit={this.handleSubmitCreateService} />
+				<Prompt
+						title="Discover a Service"
+						placeholder="Service ID"
+						defaultValue=""
+						visible={ this.state.showDiscoverService }
+						onCancel={this.handleCancelDiscoverService}
+						onSubmit={this.handleSubmitDiscoverService} />
+				<Header>
+					<Body>
+						<Title>Advertising</Title>
+					</Body>
+					<Right>
+						<Button transparent onPress={this.handleAddService}>
+							<Icon name="add" style={{color: 'white'}} />
+						</Button>
+					</Right>
+				</Header>
+				<Content>
+				<AdvertisingList items={this.state.advertising}
+					onStartAdvertising={this.handleStartAdvertising}
+					onStopAdvertising={this.handleStopAdvertising}
+					onDisconnectFromEndpoint={this.handleDisconnectFromEndpoint}
+					onAcceptConnection={this.handleAcceptConnection}
+					onRejectConnection={this.handleRejectConnection}
 
-				<Subheader text="Discovered Endpoints" />
-				{(() => {
-					return this.state.discovered_endpointIds.map((endpointId) => {
-						return (
-							<ListItem
-								style={{container:{}}}
-								key={"connect_to_"+endpointId}
-								divider
-								leftElement={
-									<Text>{endpointId}</Text>
-								}
-								rightElement={
-									<Button raised primary onPress={this.handleConnectToEndpoint(endpointId)} text="Connect" />
-								}
-									/>
-						);
-					});
-				})()}
+					onCloseMicrophone={this.handleCloseMicrophone}
+					onOpenMicrophone={this.handleOpenMicrophone}
 
-				<Subheader text="Initiated Endpoints" />
-				{(() => {
-					return this.state.initiated_endpointIds.map((endpointId) => {
-						return (
-							<ListItem
-								style={{container:{}}}
-								key={"initiated_to_"+endpointId}
-								divider
-								leftElement={
-									<Text>{endpointId}</Text>
-								}
-								rightElement={
-									<View style={{flexDirection:"row"}}>
-										<Button raised primary onPress={this.handleAcceptConnection(endpointId)} text="Accept" /><Text></Text>
-										<Button raised primary onPress={this.handleRejectConnection(endpointId)} text="Reject" />
-									</View>
-								}
-									/>
-						);
-					});
-				})()}
+					onSendFile={this.handleSendFile}
 
-				<Subheader text="Connected Endpoints" />
-				{(() => {
-					return this.state.connected_endpointIds.map((endpointId) => {
-						return (
-							<ListItem
-								style={{container:{height: 250}}}
-								key={"initiated_to_"+endpointId}
-								divider
-								leftElement={
-									<Text>{endpointId}</Text>
-								}
-								rightElement={
-									<View style={{flexDirection: 'column'}}>
-										{(() => {
-											if (this.state.payload_endpointIds[endpointId]) {
-												return (
-													<Button raised secondary onPress={((this.state.playing_endpointIds.indexOf(endpointId) != -1)? this.handleStopPlayingAudioStream(endpointId) : this.handleStartPlayingAudioStream(endpointId))} text={((this.state.playing_endpointIds.indexOf(endpointId) != -1)? "Stop Audio" : "Start Audio")} />
-												);
-											}
-										})()}
-										<Button raised primary onPress={((this.state.microphone_endpointIds.indexOf(endpointId) != -1)? this.handleCloseMicrophone(endpointId) : this.handleOpenMicrophone(endpointId))} text={((this.state.microphone_endpointIds.indexOf(endpointId) != -1)? "Close Microphone" : "Open Microphone")} />
-										<Text></Text>
-										<Button raised primary onPress={this.handleDisconnectFromEndpoint(endpointId)} text="Disconnect" />
-									</View>
-								}
-									/>
-						);
-					});
-				})()}
-			</View>
-			</ThemeProvider>
+					onStopPlayingAudioStream={this.handleStopPlayingAudioStream}
+					onStartPlayingAudioStream={this.handleStartPlayingAudioStream}
+					onSaveFile={this.handleSaveFile}
+					onReadBytes={this.handleReadBytes}
+						/>
+
+				<Header>
+					<Body>
+						<Title>Discovery</Title>
+					</Body>
+					<Right>
+						<Button transparent onPress={this.handleDiscoverService}>
+							<Icon name="add" style={{color: 'white'}} />
+						</Button>
+					</Right>
+				</Header>
+				<DiscoveringList items={this.state.discovering}
+					onStartDiscovering={this.handleStartDiscovering}
+					onStopDiscovering={this.handleStopDiscovering}
+					onDisconnectFromEndpoint={this.handleDisconnectFromEndpoint}
+					onConnectToEndpoint={this.handleConnectToEndpoint}
+
+					onCloseMicrophone={this.handleCloseMicrophone}
+					onOpenMicrophone={this.handleOpenMicrophone}
+
+					onSendFile={this.handleSendFile}
+
+					onStopPlayingAudioStream={this.handleStopPlayingAudioStream}
+					onStartPlayingAudioStream={this.handleStartPlayingAudioStream}
+					onSaveFile={this.handleSaveFile}
+					onReadBytes={this.handleReadBytes}
+						/>
+
+				</Content>
+			</Container>
 		);
 	}
 }

@@ -91,7 +91,7 @@ Add `import com.butchmarshall.reactnative.google.nearby.connection.NearbyConnect
 Import library
 
 ```javascript
-import NearbyConnection from 'react-native-google-nearby-connection';
+import NearbyConnection, {CommonStatusCodes, Strategy} from 'react-native-google-nearby-connection';
 ```
 
 Starting the discovery service
@@ -109,12 +109,27 @@ Stopping the discovery service
 NearbyConnection.stopDiscovering(serviceId);
 ```
 
+Whether a service is currently discovering
+
+```javascript
+NearbyConnection.isDiscovering()
+```
+
 Connect to a discovered endpoint
 
 ```javascript
 NearbyConnection.connectToEndpoint(
-	endpointName,           // This nodes endpoint name
-	endpointId,             // The nodes endpointId
+	serviceId,              // A unique identifier for the service
+	endpointId              // ID of the endpoint to connect to
+)
+```
+
+Disconnect from an endpoint
+
+```javascript
+NearbyConnection.disconnectFromEndpoint(
+	serviceId,              // A unique identifier for the service
+	endpointId              // ID of the endpoint we wish to disconnect from
 )
 ```
 
@@ -123,7 +138,8 @@ Starting the advertising service
 ```javascript
 NearbyConnection.startAdvertising(
 	endpointName,           // This nodes endpoint name
-	serviceId               // A unique identifier for the service
+	serviceId,              // A unique identifier for the service
+	strategy                // The Strategy to be used when discovering or advertising to Nearby devices [See Strategy](https://developers.google.com/android/reference/com/google/android/gms/nearby/connection/Strategy)
 );
 ```
 
@@ -135,28 +151,64 @@ NearbyConnection.stopAdvertising(
 );
 ```
 
+Whether a service is currently advertising
+
+```javascript
+NearbyConnection.isAdvertising()
+```
+
+Accepting a connection from an endpoint
+
+```javascript
+NearbyConnection.acceptConnection(
+	serviceId,               // A unique identifier for the service
+	endpointId               // ID of the endpoint wishing to accept the connection from
+);
+```
+
+Rejecting a connection from an endpoint
+
+```javascript
+NearbyConnection.rejectConnection(
+	serviceId,               // A unique identifier for the service
+	endpointId               // ID of the endpoint wishing to reject the connection from
+);
+```
+
 Open the microphone and broadcast audio to an endpoint
 
 ```javascript
-NearbyConnection.openMicrophone(endpointId);
+NearbyConnection.openMicrophone(
+    serviceId,               // A unique identifier for the service
+    endpointId               // ID of the endpoint wishing to send the audio to
+);
 ```
 
 Stop broadcasting audio to an endpoint
 
 ```javascript
-NearbyConnection.closeMicrophone(endpointId);
+NearbyConnection.closeMicrophone(
+    serviceId,               // A unique identifier for the service
+    endpointId               // ID of the endpoint wishing to stop sending audio to
+);
 ```
 
 Start playing an audio stream from a received payload
 
 ```javascript
-NearbyConnection.startPlayingAudioStream(endpointId);
+NearbyConnection.startPlayingAudioStream(
+    serviceId,               // A unique identifier for the service
+    endpointId               // ID of the endpoint wishing to start playing audio from
+);
 ```
 
 Stop playing an audio stream from a received payload
 
 ```javascript
-NearbyConnection.stopPlayingAudioStream(endpointId);
+NearbyConnection.stopPlayingAudioStream(
+    serviceId,               // A unique identifier for the service
+    endpointId               // ID of the endpoint wishing to stop playing audio from
+);
 ```
 
 ## Callbacks
@@ -164,29 +216,38 @@ NearbyConnection.stopPlayingAudioStream(endpointId);
 Endpoint Discovery
 
 ```javascript
-NearbyConnection.onDiscoveryStarting(() => {
+NearbyConnection.onDiscoveryStarting(({
+	serviceId               // A unique identifier for the service
+}) => {
 	// Discovery services is starting
 });
 
-NearbyConnection.onDiscoveryStarted(() => {
+NearbyConnection.onDiscoveryStarted(({
+	serviceId               // A unique identifier for the service
+}) => {
 	// Discovery services has started
 });
 
-NearbyConnection.onDiscoveryStartFailed((
-	statusCode 				// The status of the response [See CommonStatusCodes](https://developers.google.com/android/reference/com/google/android/gms/common/api/CommonStatusCodes)
-) => {
+NearbyConnection.onDiscoveryStartFailed(({
+	serviceId               // A unique identifier for the service
+	statusCode              // The status of the response [See CommonStatusCodes](https://developers.google.com/android/reference/com/google/android/gms/common/api/CommonStatusCodes)
+}) => {
 	// Failed to start discovery service
 });
 
-!!! BROKEN - I cannot figure out why this event never fires
-NearbyConnection.onEndpointLost(() => {
+// Note - Can take up to 3 min to time out
+NearbyConnection.onEndpointLost(({
+	endpointId,             // ID of the endpoint we lost
+	endpointName,           // The name of the remote device we lost
+	serviceId               // A unique identifier for the service
+}) => {
 	// Endpoint moved out of range or disconnected
 });
 
 NearbyConnection.onEndpointDiscovered(({
 	endpointId,             // ID of the endpoint wishing to connect
 	endpointName,           // The name of the remote device we're connecting to.
-	serviceId      			// A unique identifier for the service
+	serviceId               // A unique identifier for the service
 }) => {
 	// An endpoint has been discovered we can connect to
 });
@@ -195,17 +256,25 @@ NearbyConnection.onEndpointDiscovered(({
 Endpoint Advertisement
 
 ```javascript
-NearbyConnection.onAdvertisingStarting(() => {
+NearbyConnection.onAdvertisingStarting(({
+	endpointName,            // The name of the service thats starting to advertise
+	serviceId,               // A unique identifier for the service
+}) => {
 	// Advertising service is starting
 });
 
-NearbyConnection.onAdvertisingStarted(() => {
+NearbyConnection.onAdvertisingStarted(({
+	endpointName,            // The name of the service thats started to advertise
+	serviceId,               // A unique identifier for the service
+}) => {
 	// Advertising service has started
 });
 
-NearbyConnection.onAdvertisingStartFailed((
-	statusCode 				// The status of the response [See CommonStatusCodes](https://developers.google.com/android/reference/com/google/android/gms/common/api/CommonStatusCodes)
-) => {
+NearbyConnection.onAdvertisingStartFailed(({
+	endpointName,            // The name of the service thats failed to start to advertising
+	serviceId,               // A unique identifier for the service
+	statusCode,              // The status of the response [See CommonStatusCodes](https://developers.google.com/android/reference/com/google/android/gms/common/api/CommonStatusCodes)
+}) => {
 	// Failed to start advertising service
 });
 ```
@@ -215,25 +284,36 @@ Connection negotiation
 ```javascript
 NearbyConnection.onConnectionInitiatedToEndpoint(({
 	endpointId,             // ID of the endpoint wishing to connect
-	authenticationToken,    // A small symmetrical token that has been given to both devices.
 	endpointName,           // The name of the remote device we're connecting to.
+	authenticationToken,    // A small symmetrical token that has been given to both devices.
+	serviceId,              // A unique identifier for the service
 	incomingConnection      // True if the connection request was initated from a remote device.
 }) => {
 	// Connection has been initated
 });
 
-NearbyConnection.onConnectedToEndpoint((endpointId) => {
+NearbyConnection.onConnectedToEndpoint(({
+	endpointId,             // ID of the endpoint we connected to
+	endpointName,           // The name of the service
+	serviceId,              // A unique identifier for the service
+}) => {
 	// Succesful connection to an endpoint established
 });
 
 NearbyConnection.onEndpointConnectionFailed(({
 	endpointId,             // ID of the endpoint we failed to connect to
+	endpointName,           // The name of the service
+	serviceId,              // A unique identifier for the service
 	statusCode              // The status of the response [See CommonStatusCodes](https://developers.google.com/android/reference/com/google/android/gms/common/api/CommonStatusCodes)
 }) => {
 	// Failed to connect to an endpoint
 });
 
-NearbyConnection.onDisconnectedFromEndpoint((endpointId) => {
+NearbyConnection.onDisconnectedFromEndpoint(({
+	endpointId,             // ID of the endpoint we disconnected from
+	endpointName,           // The name of the service
+	serviceId,              // A unique identifier for the service
+}) => {
 	// Disconnected from an endpoint
 });
 ```
@@ -242,6 +322,7 @@ Payload Status
 
 ```javascript
 Nearby.onReceivePayload(({
+    serviceId,              // A unique identifier for the service
 	endpointId,             // ID of the endpoint we got the payload from
 	payloadType,            // The type of this payload (File or a Stream) [See Payload](https://developers.google.com/android/reference/com/google/android/gms/nearby/connection/Payload)
 	payloadId               // Unique identifier of the payload
@@ -250,6 +331,8 @@ Nearby.onReceivePayload(({
 });
 
 Nearby.onPayloadUpdate(({
+    serviceId,              // A unique identifier for the service
+	endpointId,             // ID of the endpoint we got the payload from
 	bytesTransferred,       // Bytes transfered so far
 	totalBytes,             // Total bytes to transfer
 	payloadId,              // Unique identifier of the payload
@@ -259,7 +342,8 @@ Nearby.onPayloadUpdate(({
 	// Update on a previously received payload
 });
 
-Nearby.onPayloadUpdate(({
+Nearby.onSendPayloadFailed(({
+    serviceId,              // A unique identifier for the service
 	endpointId,             // ID of the endpoint wishing to connect
 	statusCode              // The status of the response [See CommonStatusCodes](https://developers.google.com/android/reference/com/google/android/gms/common/api/CommonStatusCodes)
 }) => {

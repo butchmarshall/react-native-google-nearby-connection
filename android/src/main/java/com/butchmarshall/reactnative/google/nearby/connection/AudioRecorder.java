@@ -20,16 +20,16 @@ import java.io.OutputStream;
 public class AudioRecorder {
 	/** The stream to write to. */
 	private final OutputStream mOutputStream;
-	
+
 	/**
 	 * If true, the background thread will continue to loop and record audio. Once false, the thread
 	 * will shut down.
 	 */
 	private volatile boolean mAlive;
-	
+
 	/** The background thread recording audio for us. */
 	private Thread mThread;
-	
+
 	/**
 	 * A simple audio recorder.
 	 *
@@ -38,7 +38,7 @@ public class AudioRecorder {
 	public AudioRecorder(ParcelFileDescriptor file) {
 		mOutputStream = new ParcelFileDescriptor.AutoCloseOutputStream(file);
 	}
-	
+
 	/** @return True if actively recording. False otherwise. */
 	public boolean isRecording() {
 		return mAlive;
@@ -69,7 +69,7 @@ public class AudioRecorder {
 		}
 		return null;
 	}
-	
+
 	/** Starts recording audio. */
 	public void start() {
 		if (isRecording()) {
@@ -104,13 +104,12 @@ public class AudioRecorder {
 								mOutputStream.write(buffer.data, 0, len);
 								mOutputStream.flush();
 							} else {
-								Log.w(TAG, "Unexpected length returned: " + len);
+								throw new IOException("AudioRecorder - Unexpected length returned: " + len);
 							}
 						}
 					} catch (IOException e) {
 						Log.e(TAG, "Exception with recording stream", e);
 					} finally {
-						stopInternal();
 						try {
 							record.stop();
 						} catch (IllegalStateException e) {
@@ -123,8 +122,7 @@ public class AudioRecorder {
 		mThread.start();
 	}
 
-	private void stopInternal() {
-		mAlive = false;
+	private void closeStream() {
 		try {
 			mOutputStream.close();
 		} catch (IOException e) {
@@ -134,7 +132,8 @@ public class AudioRecorder {
 
 	/** Stops recording audio. */
 	public void stop() {
-		stopInternal();
+		mAlive = false;
+		closeStream();
 		try {
 			mThread.join();
 		} catch (InterruptedException e) {

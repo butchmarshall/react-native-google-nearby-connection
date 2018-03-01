@@ -53,25 +53,58 @@ export const ConnectionsStatusCodes = {
 	"STATUS_PAYLOAD_IO_ERROR": 8013,
 };
 
+export const Payload = {
+	"BYTES": 1,
+	"FILE": 2,
+	"STREAM": 3,
+};
+
+export const PayloadTransferUpdate = {
+	"FAILURE": 2,
+	"IN_PROGRESS": 3,
+	"SUCCESS": 1,
+};
+
 export const Strategy = {
 	"P2P_CLUSTER": 0,
 	"P2P_STAR": 1,
 };
 
 class NearbyConnection {
-	// Open the microphone
-	static openMicrophone(endpointId) {
-		NativeModules.NearbyConnection.openMicrophone(endpointId);
-	}
-	static closeMicrophone(endpointId) {
-		NativeModules.NearbyConnection.closeMicrophone(endpointId);
+	// Get all the endpoints
+	static endpoints() {
+		return NativeModules.NearbyConnection.endpoints();
 	}
 
-	static startPlayingAudioStream(endpointId) {
-		NativeModules.NearbyConnection.startPlayingAudioStream(endpointId);
+	// Send a file
+	static sendFile(serviceId, endpointId, uri) {
+		NativeModules.NearbyConnection.sendFile(serviceId, endpointId, uri);
 	}
-	static stopPlayingAudioStream(endpointId) {
-		NativeModules.NearbyConnection.stopPlayingAudioStream(endpointId);
+	// Save a file
+	static saveFile(serviceId, endpointId, payloadId, uri) {
+		NativeModules.NearbyConnection.saveFile(serviceId, endpointId, String(payloadId), uri);
+	}
+	
+	// Read out bytes
+	static readBytes(serviceId, endpointId, payloadId) {
+		return NativeModules.NearbyConnection.readBytes(serviceId, endpointId, String(payloadId));
+	}
+	
+	// Open the microphone
+	static openMicrophone(serviceId, endpointId) {
+		NativeModules.NearbyConnection.openMicrophone(serviceId, endpointId);
+	}
+	static closeMicrophone(serviceId, endpointId) {
+		NativeModules.NearbyConnection.closeMicrophone(serviceId, endpointId);
+	}
+
+	// Play a audio payload
+	static startPlayingAudioStream(serviceId, endpointId, payloadId) {
+		NativeModules.NearbyConnection.startPlayingAudioStream(serviceId, endpointId, String(payloadId));
+	}
+	// Stop playing an audio payload
+	static stopPlayingAudioStream(serviceId, endpointId, payloadId) {
+		NativeModules.NearbyConnection.stopPlayingAudioStream(serviceId, endpointId, String(payloadId));
 	}
 
 	// Start/Stop Advertise
@@ -97,19 +130,19 @@ class NearbyConnection {
 	}
 
 	// Accept or Reject
-	static acceptConnection(endpointId) {
-		NativeModules.NearbyConnection.acceptConnection(endpointId);
+	static acceptConnection(serviceId, endpointId) {
+		NativeModules.NearbyConnection.acceptConnection(serviceId, endpointId);
 	}
-	static rejectConnection(endpointId) {
-		NativeModules.NearbyConnection.rejectConnection(endpointId);
+	static rejectConnection(serviceId, endpointId) {
+		NativeModules.NearbyConnection.rejectConnection(serviceId, endpointId);
 	}
 
 	// Connect or Disconnect
-	static connectToEndpoint(endpointName, endpointId) {
-		NativeModules.NearbyConnection.connectToEndpoint(endpointName, endpointId);
+	static connectToEndpoint(serviceId, endpointId) {
+		NativeModules.NearbyConnection.connectToEndpoint(serviceId, endpointId);
 	}
-	static disconnectFromEndpoint(endpointId) {
-		NativeModules.NearbyConnection.disconnectFromEndpoint(endpointId);
+	static disconnectFromEndpoint(serviceId, endpointId) {
+		NativeModules.NearbyConnection.disconnectFromEndpoint(serviceId, endpointId);
 	}
 	
 	// ------------------------------------------------------------------------
@@ -160,8 +193,8 @@ class NearbyConnection {
 	static onReceivePayload(listener) {
 		return NearbyEventEmitter.addListener('receive_payload', listener);
 	}
-	static onPayloadUpdate(listener) {
-		return NearbyEventEmitter.addListener('payload_update', listener);
+	static onPayloadTransferUpdate(listener) {
+		return NearbyEventEmitter.addListener('payload_transfer_update', listener);
 	}
 	static onSendPayloadFailed(listener) {
 		return NearbyEventEmitter.addListener('send_payload_failed', listener);

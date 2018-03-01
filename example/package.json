@@ -12,6 +12,7 @@
   "scripts": {
     "start": "react-native start",
     "android": "rm ../android/build -Rf && react-native run-android",
+    "android:release": "(cd android && ENVFILE=.env.production ./gradlew assembleRelease)",
     "ios": "react-native run-ios",
     "test": "node node_modules/jest/bin/jest.js"
   },
@@ -19,10 +20,15 @@
     "preset": "react-native"
   },
   "dependencies": {
+    "immutable": "^3.8.2",
+    "native-base": "^2.3.7",
+    "random-words": "0.0.1",
     "react": "16.2.0",
     "react-native": "0.52.0",
     "react-native-google-nearby-connection": "file:../",
+    "react-native-image-picker": "^0.26.7",
     "react-native-material-ui": "^1.19.0",
+    "react-native-prompt": "git+https://github.com/butchmarshall/react-native-prompt.git",
     "react-native-vector-icons": "^4.5.0"
   }
 }
