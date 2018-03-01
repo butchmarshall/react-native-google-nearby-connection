@@ -28,6 +28,24 @@ import {
 
 const NearbyEventEmitter = new NativeEventEmitter(NativeModules.NearbyConnection);
 
+export const CommonStatusCodes = {
+	"API_NOT_CONNECTED": 17,
+	"CANCELED": 16,
+	"DEVELOPER_ERROR": 10,
+	"ERROR": 13,
+	"INTERNAL_ERROR": 8,
+	"INTERRUPTED": 14,
+	"INVALID_ACCOUNT": 5,
+	"NETWORK_ERROR": 7,
+	"RESOLUTION_REQUIRED": 6,
+	"SERVICE_DISABLED": 3,
+	"SERVICE_VERSION_UPDATE_REQUIRED": 2,
+	"SIGN_IN_REQUIRED": 4,
+	"SUCCESS": 0,
+	"SUCCESS_CACHE": 1,
+	"TIMEOUT": 15,
+};
+
 export const ConnectionsStatusCodes = {
 	"API_CONNECTION_FAILED_ALREADY_IN_USE": 8050,
 	"MISSING_PERMISSION_ACCESS_COARSE_LOCATION": 8034,

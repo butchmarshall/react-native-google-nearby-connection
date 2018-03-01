@@ -91,7 +91,7 @@ Add `import com.butchmarshall.reactnative.google.nearby.connection.NearbyConnect
 Import library
 
 ```javascript
-import NearbyConnection, {ConnectionsStatusCodes, Strategy, Payload, PayloadTransferUpdate} from 'react-native-google-nearby-connection';
+import NearbyConnection, {CommonStatusCodes, ConnectionsStatusCodes, Strategy, Payload, PayloadTransferUpdate} from 'react-native-google-nearby-connection';
 ```
 
 Starting the discovery service
@@ -112,7 +112,7 @@ NearbyConnection.stopDiscovering(serviceId);
 Whether a service is currently discovering
 
 ```javascript
-NearbyConnection.isDiscovering()
+NearbyConnection.isDiscovering();
 ```
 
 Connect to a discovered endpoint
@@ -121,7 +121,7 @@ Connect to a discovered endpoint
 NearbyConnection.connectToEndpoint(
     serviceId,              // A unique identifier for the service
     endpointId              // ID of the endpoint to connect to
-)
+);
 ```
 
 Disconnect from an endpoint
@@ -130,7 +130,7 @@ Disconnect from an endpoint
 NearbyConnection.disconnectFromEndpoint(
     serviceId,              // A unique identifier for the service
     endpointId              // ID of the endpoint we wish to disconnect from
-)
+);
 ```
 
 Starting the advertising service
@@ -154,7 +154,7 @@ NearbyConnection.stopAdvertising(
 Whether a service is currently advertising
 
 ```javascript
-NearbyConnection.isAdvertising()
+NearbyConnection.isAdvertising();
 ```
 
 Accepting a connection from an endpoint
