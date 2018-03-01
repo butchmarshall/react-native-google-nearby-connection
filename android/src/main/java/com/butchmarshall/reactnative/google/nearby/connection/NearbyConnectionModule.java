@@ -1344,7 +1344,15 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 		}
 	}
 
-	/** File a file to a uri. */
+	/** Send bytes to an endpoint */
+	@ReactMethod
+	public void sendBytes(final String serviceId, final String endpointId, final String bytes) {
+		logV("sendBytes to service "+serviceId+" and endpoint " + endpointId +" byte payload "+bytes);
+
+		// TODO
+	}
+
+	/** Read bytes. */
 	@ReactMethod
 	public void readBytes(final String serviceId, final String endpointId, final String payloadId, final Promise promise) {
 		logV("readBytes from service "+serviceId+" and endpoint " + endpointId + " and payload "+Long.parseLong(payloadId, 10)+" ");

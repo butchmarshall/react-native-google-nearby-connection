@@ -76,20 +76,24 @@ class NearbyConnection {
 		return NativeModules.NearbyConnection.endpoints();
 	}
 
-	// Send a file
+	// Send a file payload
 	static sendFile(serviceId, endpointId, uri) {
 		NativeModules.NearbyConnection.sendFile(serviceId, endpointId, uri);
 	}
-	// Save a file
+	// Save a file from a payload to a location
 	static saveFile(serviceId, endpointId, payloadId, uri) {
 		NativeModules.NearbyConnection.saveFile(serviceId, endpointId, String(payloadId), uri);
 	}
-	
+
+	// Send out a bytes payload
+	static sendBytes(serviceId, endpointId, bytes) {
+		return NativeModules.NearbyConnection.sendBytes(serviceId, endpointId, String(bytes));
+	}
 	// Read out bytes
 	static readBytes(serviceId, endpointId, payloadId) {
 		return NativeModules.NearbyConnection.readBytes(serviceId, endpointId, String(payloadId));
 	}
-	
+
 	// Open the microphone
 	static openMicrophone(serviceId, endpointId) {
 		NativeModules.NearbyConnection.openMicrophone(serviceId, endpointId);

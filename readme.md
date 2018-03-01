@@ -91,7 +91,7 @@ Add `import com.butchmarshall.reactnative.google.nearby.connection.NearbyConnect
 Import library
 
 ```javascript
-import NearbyConnection, {CommonStatusCodes, Strategy} from 'react-native-google-nearby-connection';
+import NearbyConnection, {ConnectionsStatusCodes, Strategy, Payload, PayloadTransferUpdate} from 'react-native-google-nearby-connection';
 ```
 
 Starting the discovery service
@@ -193,23 +193,66 @@ NearbyConnection.closeMicrophone(
 );
 ```
 
-Start playing an audio stream from a received payload
+Start playing an audio stream from a received payload (Payload.STREAM)
 
 ```javascript
 NearbyConnection.startPlayingAudioStream(
     serviceId,               // A unique identifier for the service
-    endpointId               // ID of the endpoint wishing to start playing audio from
+    endpointId,              // ID of the endpoint wishing to start playing audio from
+	payloadId                // Unique identifier of the payload
 );
 ```
 
-Stop playing an audio stream from a received payload
+Stop playing an audio stream from a received payload (Payload.STREAM)
 
 ```javascript
 NearbyConnection.stopPlayingAudioStream(
     serviceId,               // A unique identifier for the service
+    endpointId,              // ID of the endpoint wishing to stop playing audio from
+	payloadId                // Unique identifier of the payload
+);
+```
+
+Send a file to a service endpoint (Payload.FILE)
+
+```javascript
+NearbyConnection.sendFile(
+    serviceId,               // A unique identifier for the service
+    endpointId,              // ID of the endpoint wishing to stop playing audio from
+    uri                      // Location of the file to send
+);
+```
+
+Save a file from a payload (Payload.FILE)
+
+```javascript
+NearbyConnection.saveFile(
+    serviceId,               // A unique identifier for the service
+    endpointId,              // ID of the endpoint wishing to stop playing audio from
+	payloadId,               // Unique identifier of the payload
+    uri                      // Location of the file to to
+);
+```
+
+Send a bytes payload (Payload.BYTES)
+
+```javascript
+NearbyConnection.sendBytes(
+    serviceId,               // A unique identifier for the service
     endpointId               // ID of the endpoint wishing to stop playing audio from
 );
 ```
+
+Read the bytes of a payload (Payload.BYTES)
+
+```javascript
+NearbyConnection.readBytes(
+    serviceId,               // A unique identifier for the service
+    endpointId,              // ID of the endpoint wishing to stop playing audio from
+	payloadId                // Unique identifier of the payload
+);
+```
+
 
 ## Callbacks
 
