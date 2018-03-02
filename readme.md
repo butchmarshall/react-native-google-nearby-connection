@@ -223,7 +223,7 @@ NearbyConnection.sendFile(
 );
 ```
 
-Save a file from a payload (Payload.FILE)
+Save a file from a payload (Payload.FILE) // TODO
 
 ```javascript
 NearbyConnection.saveFile(
