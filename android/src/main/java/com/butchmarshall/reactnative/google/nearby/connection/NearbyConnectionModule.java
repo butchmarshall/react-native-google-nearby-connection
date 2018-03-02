@@ -1321,26 +1321,24 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 
 		logV("sendFile to service "+serviceId+" and endpoint " + endpointId + ", "+ uri);
 
-		try
-		{
-		//final Activity activity = getCurrentActivity();
+		try {
+			//final Activity activity = getCurrentActivity();
 
-		// Open the ParcelFileDescriptor for this URI with read access.
-		ParcelFileDescriptor pfd = getReactApplicationContext().getContentResolver().openFileDescriptor(uri, "r");
-		Payload filePayload = Payload.fromFile(pfd);
+			// Open the ParcelFileDescriptor for this URI with read access.
+			ParcelFileDescriptor pfd = getReactApplicationContext().getContentResolver().openFileDescriptor(uri, "r");
+			Payload filePayload = Payload.fromFile(pfd);
 
-		// Construct a simple message mapping the ID of the file payload to the desired filename.
-		String payloadFilenameMessage = filePayload.getId() + ":" + uri.getLastPathSegment();
+			// Construct a simple message mapping the ID of the file payload to the desired filename.
+			String payloadFilenameMessage = filePayload.getId() + ":" + uri.getLastPathSegment();
 
-		sendPayload(serviceId, endpointId, Payload.fromBytes(payloadFilenameMessage.getBytes("UTF-8")));
-		sendPayload(serviceId, endpointId, filePayload);
+			sendPayload(serviceId, endpointId, Payload.fromBytes(payloadFilenameMessage.getBytes("UTF-8")));
+			sendPayload(serviceId, endpointId, filePayload);
 		}
-		catch (FileNotFoundException ex)  
-		{
-			logV("sendFile error 1.");
+		catch (FileNotFoundException e)   {
+			logW("sendFile() failed.", e);
 		}
-		catch(IOException e){
-			logV("sendFile error 2.");
+		catch(IOException e) {
+			logW("sendFile() failed.", e);
 		}
 	}
 
@@ -1349,7 +1347,12 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 	public void sendBytes(final String serviceId, final String endpointId, final String bytes) {
 		logV("sendBytes to service "+serviceId+" and endpoint " + endpointId +" byte payload "+bytes);
 
-		// TODO
+		try {
+			sendPayload(serviceId, endpointId, Payload.fromBytes(bytes.getBytes("UTF-8")));
+		}
+		catch(IOException e) {
+			logW("sendBytes() failed.", e);
+		}
 	}
 
 	/** Read bytes. */

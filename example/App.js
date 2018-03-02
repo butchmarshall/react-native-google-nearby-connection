@@ -850,8 +850,13 @@ export default class App extends React.Component {
 		Nearby.readBytes(endpoint.serviceId, endpoint.id, payload.payloadId).then(
 			(string) => {
 				console.log("readBytes result: ", string);
+				ToastAndroid.showWithGravity(string, ToastAndroid.SHORT, ToastAndroid.CENTER);
 			}
-		)
+		);
+	}
+	handleSendBytes = (endpoint, bytes) => {
+		console.log("handleSendBytes", endpoint.toJS(), bytes);
+		Nearby.sendBytes(endpoint.serviceId, endpoint.id, bytes);
 	}
 
 	handleAddService = () => {
@@ -944,6 +949,7 @@ export default class App extends React.Component {
 					onStartPlayingAudioStream={this.handleStartPlayingAudioStream}
 					onSaveFile={this.handleSaveFile}
 					onReadBytes={this.handleReadBytes}
+					onSendBytes={this.handleSendBytes}
 						/>
 
 				<Header>
@@ -971,6 +977,7 @@ export default class App extends React.Component {
 					onStartPlayingAudioStream={this.handleStartPlayingAudioStream}
 					onSaveFile={this.handleSaveFile}
 					onReadBytes={this.handleReadBytes}
+					onSendBytes={this.handleSendBytes}
 						/>
 
 				</Content>
@@ -978,18 +985,3 @@ export default class App extends React.Component {
 		);
 	}
 }
-
-const styles = StyleSheet.create({
-	container: {
-		flex: 1,
-		flexDirection: 'column',
-		backgroundColor: '#fff',
-		//alignItems: 'center',
-		//justifyContent: 'center',
-	},
-	button: {
-		borderColor: 'black',
-		padding: 10,
-		borderWidth: 1
-	}
-});

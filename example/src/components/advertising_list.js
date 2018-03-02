@@ -20,6 +20,7 @@ import {
 import AudioRecorder from './audio_recorder';
 import EndpointPayloads from './endpoint_payloads';
 import SendFile from './send_file';
+import SendMessage from './send_message';
 
 const defaultFunc = () => {};
 
@@ -40,7 +41,9 @@ const AdvertisingList = (props) => {
 		onStopPlayingAudioStream = defaultFunc,
 		onStartPlayingAudioStream = defaultFunc,
 		onSaveFile = defaultFunc,
+
 		onReadBytes = defaultFunc,
+		onSendBytes = defaultFunc,
 	} = props;
 
 	const handleStartAdvertising = (service) => () => {
@@ -117,6 +120,7 @@ const AdvertisingList = (props) => {
 								</CardItem>,
 								<AudioRecorder key={"advertising_endpoint_audiorecorder_"+endpoint.id} endpoint={endpoint} onOpenMicrophone={onOpenMicrophone} onCloseMicrophone={onCloseMicrophone} />,
 								<SendFile key={"advertising_endpoint_sendfile_"+endpoint.id} endpoint={endpoint} onSendFile={onSendFile} />,
+								<SendMessage key={"advertising_endpoint_sendmessage_"+endpoint.id} endpoint={endpoint} onSendMessage={onSendBytes} />,
 								<EndpointPayloads key={"advertising_endpoint_payloads_"+endpoint.id} endpoint={endpoint} onStartPlayingAudioStream={onStartPlayingAudioStream} onStopPlayingAudioStream={onStopPlayingAudioStream} onSaveFile={onSaveFile} onReadBytes={onReadBytes} />,
 							];
 						});
