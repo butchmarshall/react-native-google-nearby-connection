@@ -239,7 +239,8 @@ Send a bytes payload (Payload.BYTES)
 ```javascript
 NearbyConnection.sendBytes(
     serviceId,               // A unique identifier for the service
-    endpointId               // ID of the endpoint wishing to stop playing audio from
+    endpointId,              // ID of the endpoint wishing to stop playing audio from
+    bytes                    // A string to send to the endpoint
 );
 ```
 
