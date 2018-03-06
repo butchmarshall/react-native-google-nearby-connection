@@ -3,6 +3,7 @@ package com.butchmarshall.reactnative.google.nearby.connection;
 import static com.butchmarshall.reactnative.google.nearby.connection.Constants.TAG;
 
 import android.Manifest;
+import android.hardware.Camera;
 
 import com.facebook.react.modules.core.PermissionAwareActivity;
 import com.facebook.react.modules.core.PermissionListener;
@@ -34,7 +35,6 @@ import android.content.BroadcastReceiver;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
-import android.content.pm.PackageManager;
 import android.content.pm.ApplicationInfo;
 
 import android.os.Bundle;
@@ -51,6 +51,7 @@ import android.support.annotation.UiThread;
 import android.support.annotation.WorkerThread;
 import android.support.v4.content.ContextCompat;
 import android.support.v4.app.ActivityCompat;
+import android.support.v4.util.SimpleArrayMap;
 import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
 import android.widget.Toast;
@@ -78,6 +79,10 @@ import java.util.HashSet;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
 
 import java.io.*;
 /*import java.io.ByteArrayOutputStream;
@@ -114,6 +119,12 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 			Manifest.permission.RECORD_AUDIO,
 		};
 
+	private static final String[] REQUIRED_STORAGE_PERMISSIONS =
+		new String[] {
+			Manifest.permission.READ_EXTERNAL_STORAGE,
+			Manifest.permission.WRITE_EXTERNAL_STORAGE,
+		};
+
 	private static final String E_PERMISSIONS_MISSING = "E_PERMISSION_MISSING";
 	private static final String E_CALLBACK_ERROR = "E_CALLBACK_ERROR";
 	private static final int REQUEST_CODE_REQUIRED_PERMISSIONS = 1;
@@ -142,6 +153,8 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 	private final Map<String, AudioRecorder> mRecorders = new HashMap<>();
 
 	private final Map<String, Payload> mReceivedPayloads = new HashMap<>();
+	private final SimpleArrayMap<String, String> mPayloadFileData = new SimpleArrayMap<>();
+
 	private final Map<String, AudioPlayer> mAudioPlayers = new HashMap<>();
 
 	/** Callbacks for connections to other devices. */
@@ -197,7 +210,7 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 
 		return mConnectionLifecycleCallback;
 	}
-	
+
 	/** Callbacks for payloads (bytes of data) sent from another device to us. */
 	private PayloadCallback getPayloadCallback(final String serviceId) {
 		final PayloadCallback mPayloadCallback = new PayloadCallback() {
@@ -206,23 +219,42 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 				String payloadId = Long.toString(payload.getId());
 				int payloadType = payload.getType();
 
-				logD(String.format("onPayloadReceived(endpointId=%s, payload=%s, id=%s, type=%s)", endpointId, payload, payloadId, payload.getType()));
+				logD(String.format("onPayloadReceived(endpointId=%s, payload=%s, id=%s, type=%s)", endpointId, payload, payloadId, payloadType));
 
 				mReceivedPayloads.put(serviceId+"_"+endpointId+"_"+payloadId, payload);
 
-				// Got an audio stream - start playing immediately
-				/*if (payloadType == Payload.Type.STREAM) {
-					startPlayingAudioStream(serviceId, endpointId, payloadId);
-				}*/
+				// Track out-of-band filename transfers
+				if (payloadType == Payload.Type.BYTES) {
+					String bytes = "";
+
+					try {
+						bytes = new String(payload.asBytes(), "UTF-8");
+					}
+					catch (UnsupportedEncodingException e) {
+						logW("onPayloadReceived failed converting payload asBytes.", e);
+					}
+
+					int colonIndex = bytes.indexOf(':');
+					int filePayloadType = Integer.parseInt(bytes.substring(0, colonIndex));
+					if (filePayloadType == Payload.Type.FILE) {
+						bytes = bytes.substring(colonIndex + 1);
+
+						colonIndex = bytes.indexOf(':');
+						String filePayloadId = bytes.substring(0, colonIndex);
+						String filename = bytes.substring(colonIndex + 1);
+
+						logD(String.format("got filename for (payloadId=%s, filename=%s)", filePayloadId, filename));
+
+						mPayloadFileData.put(filePayloadId, filename);
+					}
+				}
 
 				onReceivePayload(serviceId, endpointId, payload);
 			}
 
 			@Override
 			public void onPayloadTransferUpdate(String endpointId, PayloadTransferUpdate update) {
-				logD(
-					String.format(
-						"onPayloadTransferUpdate(endpointId=%s, update=%s)", endpointId, update));
+				logD(String.format("onPayloadTransferUpdate(endpointId=%s, update=%s)", endpointId, update));
 
 				onPayloadUpdate(serviceId, endpointId, update);
 			}
@@ -240,7 +272,9 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
                         "onEndpointFound(endpointId=%s, serviceId=%s, endpointName=%s)",
                         endpointId, info.getServiceId(), info.getEndpointName()));
 
-				if (serviceId.equals(info.getServiceId())) {
+				Endpoint existingEndpoint = mEndpoints.get(serviceId+"_"+endpointId);
+
+				if (serviceId.equals(info.getServiceId()) && existingEndpoint == null || !existingEndpoint.isConnected()) {
 					Endpoint endpoint = new Endpoint(serviceId, endpointId, info.getEndpointName(), "discovering");
 					mEndpoints.put(serviceId+"_"+endpointId, endpoint);
 
@@ -373,6 +407,21 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
     public void onActivityResult(Activity activity, final int requestCode, final int resultCode, final Intent data) {
 
     }
+
+	/**
+	 * Get all the payloads received by this device
+	 */
+	@ReactMethod
+	public void payloads(final Promise promise) {
+		WritableArray result = Arguments.createArray();
+
+		for (String key : mReceivedPayloads.keySet()) {
+			// Explode key to get serviceId, endpointId, payloadId
+			//result.pushMap(endpoint.toWritableMap());
+		}
+
+		promise.resolve(result);
+	}
 
 	/**
 	 * Get all the services discovered by this device
@@ -1314,24 +1363,27 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 		disconnectedFromEndpoint(serviceId, endpointId);
 	}
 
+	/** Removes a payload */
+	@ReactMethod
+	public void removePayload(final String serviceId, final String endpointId, final String payloadId) {
+		mReceivedPayloads.remove(serviceId+"_"+endpointId+"_"+payloadId);
+	}
+
 	/** Send a file to a connected device. */
 	@ReactMethod
-	public void sendFile(final String serviceId, final String endpointId, final String path) {
+	public void sendFile(final String serviceId, final String endpointId, final String path, final String metadata) {
 		Uri uri = Uri.parse(path);
 
 		logV("sendFile to service "+serviceId+" and endpoint " + endpointId + ", "+ uri);
 
 		try {
-			//final Activity activity = getCurrentActivity();
-
 			// Open the ParcelFileDescriptor for this URI with read access.
 			ParcelFileDescriptor pfd = getReactApplicationContext().getContentResolver().openFileDescriptor(uri, "r");
 			Payload filePayload = Payload.fromFile(pfd);
 
-			// Construct a simple message mapping the ID of the file payload to the desired filename.
-			String payloadFilenameMessage = filePayload.getId() + ":" + uri.getLastPathSegment();
+			String payloadMessage = Payload.Type.FILE+":"+filePayload.getId() + ":" + uri.getLastPathSegment() + ":" + metadata;
+			sendPayload(serviceId, endpointId, Payload.fromBytes(payloadMessage.getBytes("UTF-8")));
 
-			sendPayload(serviceId, endpointId, Payload.fromBytes(payloadFilenameMessage.getBytes("UTF-8")));
 			sendPayload(serviceId, endpointId, filePayload);
 		}
 		catch (FileNotFoundException e)   {
@@ -1348,7 +1400,9 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 		logV("sendBytes to service "+serviceId+" and endpoint " + endpointId +" byte payload "+bytes);
 
 		try {
-			sendPayload(serviceId, endpointId, Payload.fromBytes(bytes.getBytes("UTF-8")));
+			String payloadMessage = Payload.Type.BYTES+":"+ bytes;
+
+			sendPayload(serviceId, endpointId, Payload.fromBytes(payloadMessage.getBytes("UTF-8")));
 		}
 		catch(IOException e) {
 			logW("sendBytes() failed.", e);
@@ -1369,10 +1423,40 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 			logV("Cannot get, not bytes.");
 			return;
 		}
-	
+
 		try {
 			String bytes = new String(payload.asBytes(), "UTF-8");
-			promise.resolve(bytes);
+
+			int colonIndex = bytes.indexOf(':');
+			int payloadType = Integer.parseInt(bytes.substring(0, colonIndex));
+			bytes = bytes.substring(colonIndex + 1);
+
+			WritableMap out = Arguments.createMap();
+			out.putInt("type", payloadType);
+
+			// Simple bytes payload
+			if (payloadType == Payload.Type.BYTES) {
+				out.putString("bytes", bytes);
+			}
+			// Represents a file or stream payload
+			else if (payloadType == Payload.Type.FILE || payloadType == Payload.Type.STREAM) {
+				// Get payloadId of payload represented
+				colonIndex = bytes.indexOf(':');
+				out.putString("payloadId", bytes.substring(0, colonIndex));
+
+				bytes = bytes.substring(colonIndex + 1);
+				colonIndex = bytes.indexOf(':');
+
+				if (payloadType == Payload.Type.STREAM) {
+					out.putString("streamType", bytes.substring(0, colonIndex));
+				}
+				else {
+					out.putString("filename", bytes.substring(0, colonIndex));
+				}
+				out.putString("metadata", bytes.substring(colonIndex + 1));
+			}
+
+			promise.resolve(out);
 		}
 		catch (UnsupportedEncodingException ex) {
 			promise.reject("");
@@ -1381,23 +1465,69 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 
 	/** File a file to a uri. */
 	@ReactMethod
-	public void saveFile(final String serviceId, final String endpointId, final String payloadId, final String path) {
-		logV("saveFile from service "+serviceId+" and endpoint " + endpointId + " and payload "+payloadId+" to path "+path);
+	public void saveFile(final String serviceId, final String endpointId, final String payloadId, final Promise promise) {
+		logV("saveFile from service "+serviceId+" and endpoint " + endpointId + " and payload "+payloadId);
 
-		Payload payload = mReceivedPayloads.get(serviceId+"_"+endpointId+"_"+payloadId);
+		final Payload payload = mReceivedPayloads.get(serviceId+"_"+endpointId+"_"+payloadId);
 		if (payload == null) {
 			logV("Cannot find payload.");
+			promise.reject("");
 			return;
 		}
 		if (payload.getType() != Payload.Type.FILE) {
 			logV("Cannot save, not a file.");
+			promise.reject("");
 			return;
 		}
+
+		final String payloadFileData = mPayloadFileData.get(payloadId);
+		int colonIndex = payloadFileData.indexOf(':');
+		final String payloadFilename = payloadFileData.substring(0, colonIndex);
+		final String payloadMetadata = payloadFileData.substring(colonIndex+1);
+
+		if (payloadFilename == null) {
+			logV("Cannot find filename for "+payloadId);
+			promise.reject("");
+			return;
+		}
+
+		final Activity activity = getCurrentActivity();
+
+		permissionsCheck(activity, Arrays.asList(getRequiredStoragePermissions()), new Callable<Void>() {
+            @Override
+            public Void call() throws Exception {
+				File payloadFile = payload.asFile().asJavaFile();
+				if (payloadFile == null) {
+					logV("Cannot convert to file.");
+					promise.reject("");
+				}
+				else {
+					File destPath = payloadFile.getParentFile();
+					String extension = NearbyConnectionModule.getFileExtension(payloadFilename);
+
+					File destFile = NearbyConnectionModule.getUniqueFile(destPath, extension);
+
+					payloadFile.renameTo(destFile);
+
+					String destFilePath = destFile.getPath();
+					logV("file saved to "+destFilePath);
+
+					WritableMap out = Arguments.createMap();
+					out.putString("path", destFilePath);
+					out.putString("originalFilename", payloadFilename);
+					out.putString("metadata", payloadMetadata);
+
+					promise.resolve(out);
+				}
+
+				return null;
+			}
+		});
 	}
 
 	/** Send sound from the microphone and stream to a connected device. */
 	@ReactMethod
-	public void openMicrophone(final String serviceId, final String endpointId) {
+	public void openMicrophone(final String serviceId, final String endpointId, final String metadata) {
 		logV("openMicrophone to service "+serviceId+" and endpoint " + endpointId);
 
 		final Activity activity = getCurrentActivity();
@@ -1408,8 +1538,14 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 				try {
 					ParcelFileDescriptor[] payloadPipe = ParcelFileDescriptor.createPipe();
 
+					Payload streamPayload = Payload.fromStream(payloadPipe[0]);
+
+					// Send payload indicating this is an audio stream
+					String payloadMessage = Payload.Type.STREAM+":"+streamPayload.getId() + ":audio:" + metadata;
+					sendPayload(serviceId, endpointId, Payload.fromBytes(payloadMessage.getBytes("UTF-8")));
+
 					// Send the first half of the payload (the read side) to Nearby Connections.
-					sendPayload(serviceId, endpointId, Payload.fromStream(payloadPipe[0]));
+					sendPayload(serviceId, endpointId, streamPayload);
 
 					// Use the second half of the payload (the write side) in AudioRecorder.
 					AudioRecorder recorder = new AudioRecorder(payloadPipe[1]);
@@ -1489,7 +1625,13 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 	/** @return True if currently streaming from the microphone. */
 	@ReactMethod
 	private boolean isMicrophoneOpen() {
-		return mRecorder != null && mRecorder.isRecording();
+		for (AudioRecorder recorder : mRecorders.values()) {
+			if (recorder != null && recorder.isRecording()) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	/**
@@ -1500,10 +1642,17 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 	}
 
 	/**
-	 * @return All permissions required audio to properly function
+	 * @return All permissions required audio transfer to properly function
 	 */
 	protected String[] getRequiredAudioPermissions() {
 		return REQUIRED_AUDIO_PERMISSIONS;
+	}
+
+	/**
+	 * @return All permissions required for file transfer to properly function
+	 */
+	protected String[] getRequiredStoragePermissions() {
+		return REQUIRED_STORAGE_PERMISSIONS;
 	}
 	
 	/**
@@ -1601,6 +1750,29 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 		}
 	}
 
+	/** A safe way to get an instance of the Camera object. */
+	private static Camera getCameraInstance(){
+		Camera c = null;
+		try {
+			c = Camera.open(); // attempt to get a Camera instance
+		}
+		catch (Exception e){
+			// Camera is not available (in use or does not exist)
+		}
+		return c; // returns null if camera is unavailable
+	}
+
+	/** Check if this device has a camera */
+	private static boolean hasCameraHardware(Context context) {
+		if (context.getPackageManager().hasSystemFeature(PackageManager.FEATURE_CAMERA)){
+			// this device has a camera
+			return true;
+		} else {
+			// no camera on this device
+			return false;
+		}
+	}
+
 	/**
 	 * Transforms a {@link Status} into a English-readable message for logging.
 	 *
@@ -1640,6 +1812,22 @@ public class NearbyConnectionModule extends ReactContextBaseJavaModule implement
 	@CallSuper
 	protected void logE(String msg, Throwable e) {
 		Log.e(TAG, msg, e);
+	}
+
+	private static File getUniqueFile(File directory, String extension) {
+		return new File(directory, new StringBuilder()
+			.append(UUID.randomUUID())
+			.append(".")
+			.append(extension).toString()
+		);
+	}
+
+	private static String getFileExtension(String name) {
+		try {
+			return name.substring(name.lastIndexOf(".") + 1);
+		} catch (Exception e) {
+			return "";
+		}
 	}
 
 	/** Represents a device we can talk to. */

@@ -94,13 +94,23 @@ class NearbyConnection {
 		return NativeModules.NearbyConnection.endpoints();
 	}
 
-	// Send a file payload
-	static sendFile(serviceId, endpointId, uri) {
-		NativeModules.NearbyConnection.sendFile(serviceId, endpointId, uri);
+	// Get all payloads
+	static payloads() {
+		return NativeModules.NearbyConnection.payloads();
 	}
+
 	// Save a file from a payload to a location
-	static saveFile(serviceId, endpointId, payloadId, uri) {
-		NativeModules.NearbyConnection.saveFile(serviceId, endpointId, String(payloadId), uri);
+	static removePayload(serviceId, endpointId, payloadId) {
+		return NativeModules.NearbyConnection.removePayload(serviceId, endpointId, String(payloadId));
+	}
+
+	// Send a file payload
+	static sendFile(serviceId, endpointId, uri, metadata = "") {
+		return NativeModules.NearbyConnection.sendFile(serviceId, endpointId, uri, metadata);
+	}
+	// Save a file from a payload
+	static saveFile(serviceId, endpointId, payloadId) {
+		return NativeModules.NearbyConnection.saveFile(serviceId, endpointId, String(payloadId));
 	}
 
 	// Send out a bytes payload
@@ -113,58 +123,58 @@ class NearbyConnection {
 	}
 
 	// Open the microphone
-	static openMicrophone(serviceId, endpointId) {
-		NativeModules.NearbyConnection.openMicrophone(serviceId, endpointId);
+	static openMicrophone(serviceId, endpointId, metadata = "") {
+		return NativeModules.NearbyConnection.openMicrophone(serviceId, endpointId, metadata);
 	}
 	static closeMicrophone(serviceId, endpointId) {
-		NativeModules.NearbyConnection.closeMicrophone(serviceId, endpointId);
+		return NativeModules.NearbyConnection.closeMicrophone(serviceId, endpointId);
 	}
 
 	// Play a audio payload
 	static startPlayingAudioStream(serviceId, endpointId, payloadId) {
-		NativeModules.NearbyConnection.startPlayingAudioStream(serviceId, endpointId, String(payloadId));
+		return NativeModules.NearbyConnection.startPlayingAudioStream(serviceId, endpointId, String(payloadId));
 	}
 	// Stop playing an audio payload
 	static stopPlayingAudioStream(serviceId, endpointId, payloadId) {
-		NativeModules.NearbyConnection.stopPlayingAudioStream(serviceId, endpointId, String(payloadId));
+		return NativeModules.NearbyConnection.stopPlayingAudioStream(serviceId, endpointId, String(payloadId));
 	}
 
 	// Start/Stop Advertise
 	static startAdvertising(localEndpointName, serviceId, strategy = Strategy.P2P_CLUSTER) {
-		NativeModules.NearbyConnection.startAdvertising(localEndpointName, serviceId, strategy);
+		return NativeModules.NearbyConnection.startAdvertising(localEndpointName, serviceId, strategy);
 	}
 	static stopAdvertising(serviceId) {
-		NativeModules.NearbyConnection.stopAdvertising(serviceId);
+		return NativeModules.NearbyConnection.stopAdvertising(serviceId);
 	}
 	static isAdvertising() {
-		NativeModules.NearbyConnection.isAdvertising();
+		return NativeModules.NearbyConnection.isAdvertising();
 	}
 
 	// Start/Stop Discover
 	static startDiscovering(serviceId, strategy = Strategy.P2P_CLUSTER) {
-		NativeModules.NearbyConnection.startDiscovering(serviceId, strategy);
+		return NativeModules.NearbyConnection.startDiscovering(serviceId, strategy);
 	}
 	static stopDiscovering(serviceId) {
-		NativeModules.NearbyConnection.stopDiscovering(serviceId);
+		return NativeModules.NearbyConnection.stopDiscovering(serviceId);
 	}
 	static isDiscovering() {
-		NativeModules.NearbyConnection.isDiscovering();
+		return NativeModules.NearbyConnection.isDiscovering();
 	}
 
 	// Accept or Reject
 	static acceptConnection(serviceId, endpointId) {
-		NativeModules.NearbyConnection.acceptConnection(serviceId, endpointId);
+		return NativeModules.NearbyConnection.acceptConnection(serviceId, endpointId);
 	}
 	static rejectConnection(serviceId, endpointId) {
-		NativeModules.NearbyConnection.rejectConnection(serviceId, endpointId);
+		return NativeModules.NearbyConnection.rejectConnection(serviceId, endpointId);
 	}
 
 	// Connect or Disconnect
 	static connectToEndpoint(serviceId, endpointId) {
-		NativeModules.NearbyConnection.connectToEndpoint(serviceId, endpointId);
+		return NativeModules.NearbyConnection.connectToEndpoint(serviceId, endpointId);
 	}
 	static disconnectFromEndpoint(serviceId, endpointId) {
-		NativeModules.NearbyConnection.disconnectFromEndpoint(serviceId, endpointId);
+		return NativeModules.NearbyConnection.disconnectFromEndpoint(serviceId, endpointId);
 	}
 	
 	// ------------------------------------------------------------------------

@@ -175,12 +175,22 @@ NearbyConnection.rejectConnection(
 );
 ```
 
+Removes a payload (free memory)
+
+```javascript
+NearbyConnection.removePayload(
+    serviceId,               // A unique identifier for the service
+    endpointId,              // ID of the endpoint wishing to stop playing audio from
+    payloadId                // Unique identifier of the payload
+);
+
 Open the microphone and broadcast audio to an endpoint
 
 ```javascript
 NearbyConnection.openMicrophone(
     serviceId,               // A unique identifier for the service
-    endpointId               // ID of the endpoint wishing to send the audio to
+    endpointId,              // ID of the endpoint wishing to send the audio to
+    metadata                 // String of metadata you wish to pass along with the stream
 );
 ```
 
@@ -219,19 +229,24 @@ Send a file to a service endpoint (Payload.FILE)
 NearbyConnection.sendFile(
     serviceId,               // A unique identifier for the service
     endpointId,              // ID of the endpoint wishing to stop playing audio from
-    uri                      // Location of the file to send
+    uri,                     // Location of the file to send
+    metadata                 // String of metadata you wish to pass along with the file
 );
 ```
 
-Save a file from a payload (Payload.FILE) // TODO
+Save a file from a payload (Payload.FILE) to storage
 
 ```javascript
 NearbyConnection.saveFile(
     serviceId,               // A unique identifier for the service
     endpointId,              // ID of the endpoint wishing to stop playing audio from
     payloadId,               // Unique identifier of the payload
-    uri                      // Location of the file to to
-);
+).then({
+    path,                    // Path where the file was saved on local filesystem
+    originalFilename,        // The original name of the sent file
+    metadata,                // Any metadata that was sent along with sendFile
+}) => {
+});
 ```
 
 Send a bytes payload (Payload.BYTES)
@@ -240,18 +255,25 @@ Send a bytes payload (Payload.BYTES)
 NearbyConnection.sendBytes(
     serviceId,               // A unique identifier for the service
     endpointId,              // ID of the endpoint wishing to stop playing audio from
-    bytes                    // A string to send to the endpoint
 );
 ```
 
-Read the bytes of a payload (Payload.BYTES)
+Read payload \[Payload\.Type\.BYTES\] or out of band file \[Payload\.Type\.FILE\] or stream \[Payload\.Type\.STREAM\] information
 
 ```javascript
 NearbyConnection.readBytes(
     serviceId,               // A unique identifier for the service
     endpointId,              // ID of the endpoint wishing to stop playing audio from
     payloadId                // Unique identifier of the payload
-);
+).then(({
+    type,                    // The Payload.Type represented by this payload
+    bytes,                   // \[Payload\.Type\.BYTES\] The bytes string that was sent
+    payloadId,               // \[Payload\.Type\.FILE\ or Payload\.Type\.STREAM\] The payloadId of the payload this payload is describing
+    filename,                // \[Payload\.Type\.FILE\] The name of the file being sent
+    metadata,                // \[Payload\.Type\.FILE\] The metadata sent along with the file
+    streamType,              // \[Payload\.Type\.STREAM\] The type of stream this is \[audio or video\]
+}) => {
+});
 ```
 
 

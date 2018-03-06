@@ -6,6 +6,7 @@ import {
 	Switch,
 	View,
 	Text as Native_Text,
+	Image,
 } from 'react-native';
 
 import {
@@ -15,9 +16,16 @@ import {
 	Title, Left, Body, Right,
 	Card, CardItem,
 	Button, Text, Icon,
+	Separator,
 } from 'native-base';
 
 import Nearby, { ConnectionsStatusCodes, Strategy, Payload, PayloadTransferUpdate } from 'react-native-google-nearby-connection';
+
+const ReceivedHeader = (
+	<Separator bordered key={"header"}>
+		<Text>Received Payloads</Text>
+	</Separator>
+);
 
 const EndpointPayloads = (props) => {
 	const {
@@ -41,7 +49,7 @@ const EndpointPayloads = (props) => {
 		onReadBytes(endpoint, payload);
 	};
 
-	return endpoint.payloads.map((payload, payloadId) => {
+	const result = endpoint.payloads.map((payload, payloadId) => {
 		if (payload.payloadStatus === PayloadTransferUpdate.FAILURE) {
 			return null;
 		}
@@ -63,40 +71,68 @@ const EndpointPayloads = (props) => {
 			);
 		}
 		else if (payload.payloadType === Payload.FILE) {
-			return (
-				<CardItem key={"endpoint_payload_"+payloadId}>
-					<Left>
-						<Body>
-							<Text>Save File</Text>
-						</Body>	
-					</Left>
-					<Right>
-						<Button onPress={handleSaveFile(endpoint, payload)}>
-							<Icon name={((payload.payloadStatus != PayloadTransferUpdate.SUCCESS) ? "cloud-outline" : "download")} />
-						</Button>
-					</Right>
-				</CardItem>
-			);
+			return [
+				(
+					<CardItem key={"endpoint_payload_"+payloadId}>
+						<Left>
+							<Body>
+								<Text>Save File</Text>
+							</Body>
+						</Left>
+						<Right>
+							<Button onPress={handleSaveFile(endpoint, payload)}>
+								<Icon name={((payload.payloadStatus != PayloadTransferUpdate.SUCCESS) ? "cloud-outline" : "download")} />
+							</Button>
+						</Right>
+					</CardItem>
+				),
+				((payload.data)? (
+					<CardItem key={"endpoint_payload_data_"+payloadId}>
+						<Left>
+							<Body>
+								<Text>{JSON.stringify(payload.data)}</Text>
+								<Image source={{uri: "file://"+payload.data.path }} style={{width: 40, height: 40}} />
+							</Body>
+						</Left>
+					</CardItem>
+				) : null)
+			];
 		}
 		else if (payload.payloadType === Payload.BYTES) {
-			return (
-				<CardItem key={"endpoint_payload_"+payloadId}>
-					<Left>
-						<Body>
-							<Text>Read Bytes</Text>
-						</Body>	
-					</Left>
-					<Right>
-						<Button onPress={handleReadBytes(endpoint, payload)}>
-							<Icon name={((payload.payloadStatus != PayloadTransferUpdate.SUCCESS) ? "cloud-outline" : "download")} />
-						</Button>
-					</Right>
-				</CardItem>
-			);
+			return [
+				(
+					<CardItem key={"endpoint_payload_"+payloadId}>
+						<Left>
+							<Body>
+								<Text>Read Bytes</Text>
+							</Body>
+						</Left>
+						<Right>
+							<Button onPress={handleReadBytes(endpoint, payload)}>
+								<Icon name={((payload.payloadStatus != PayloadTransferUpdate.SUCCESS) ? "cloud-outline" : "download")} />
+							</Button>
+						</Right>
+					</CardItem>
+				),
+				((payload.data)? (
+					<CardItem key={"endpoint_payload_data_"+payloadId}>
+						<Left>
+							<Body>
+								<Text>{JSON.stringify(payload.data)}</Text>
+							</Body>
+						</Left>
+					</CardItem>
+				) : null)
+			];
 		}
 
 		return null;
 	}).valueSeq().toJS();
+
+	return [
+		ReceivedHeader,
+		result
+	];
 };
 
 export default EndpointPayloads;
