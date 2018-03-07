@@ -4,6 +4,7 @@ import {
 	NativeEventEmitter,
 	NativeModules,
 	TouchableHighlight,
+	PermissionsAndroid,
 	StyleSheet,
 	Switch,
 	View,
@@ -26,7 +27,7 @@ import {
 	Button, Text, Icon,
 } from 'native-base';
 
-import Nearby, { ConnectionsStatusCodes, Strategy, PayloadTransferUpdate } from 'react-native-google-nearby-connection';
+import Nearby, { ConnectionsStatusCodes, Strategy, Payload as Nearby_Payload, PayloadTransferUpdate } from 'react-native-google-nearby-connection';
 
 import DiscoveringList from './src/components/discovering_list';
 import AdvertisingList from './src/components/advertising_list';
@@ -60,6 +61,7 @@ const Payload = new Immutable.Record({
 	totalBytes: undefined,
 	bytesTransferred: undefined,
 	payloadHashCode: undefined,
+	data: undefined,
 	playing: false
 });
 
@@ -105,7 +107,7 @@ export default class App extends React.Component {
 			}
 		);
 	}
-	
+
 	componentWillUnmount() {
 		this.subscribed_events.forEach((event) => {
 			event.remove();
@@ -114,6 +116,11 @@ export default class App extends React.Component {
 	}
 
 	componentDidMount() {
+		PermissionsAndroid.requestMultiple([
+			PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
+			PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE,
+		]);
+
 		// Discovery
 		this.subscribed_events.push(
 			Nearby.onDiscoveryStarting(({serviceId}) => {
@@ -292,6 +299,11 @@ export default class App extends React.Component {
 										for(var key in result) {
 											payload = payload.set(key, result[key]);
 										}
+
+										// Bytes should be read immediately
+										if (payload.payloadType == Nearby_Payload.BYTES && payload.payloadStatus == PayloadTransferUpdate.SUCCESS) {
+											this.handleReadBytes(endpoint, payload);
+										}
 									}
 									payloads = payloads.set(k, payload);
 								});
@@ -325,6 +337,11 @@ export default class App extends React.Component {
 
 										for(var key in result) {
 											payload = payload.set(key, result[key]);
+										}
+
+										// Bytes should be read immediately
+										if (payload.payloadType == Nearby_Payload.BYTES && payload.payloadStatus == PayloadTransferUpdate.SUCCESS) {
+											this.handleReadBytes(endpoint, payload);
 										}
 									}
 									payloads = payloads.set(k, payload);
@@ -572,7 +589,7 @@ export default class App extends React.Component {
 				const discovering = this.state.discovering.map((service) => {
 					if (service.serviceId == serviceId) {
 						const endpoints = service.endpoints.map((endpoint) => {
-							if (endpoint.id === endpointId && endpoint.state === "disconnected") {
+							if (endpoint.id === endpointId && endpoint.state !== "connected") {
 								endpoint = endpoint.set("state", "lost");
 							}
 
@@ -843,14 +860,147 @@ export default class App extends React.Component {
 		});
 	}
 	handleSaveFile = (endpoint, payload) => {
-		
+		const serviceId = endpoint.serviceId,
+		endpointId = endpoint.id,
+		payloadId = payload.payloadId;
+
+		console.log("handleSaveFile", endpoint.toJS(), payload);
+
+		Nearby.saveFile(serviceId, endpointId, payloadId).then(
+			(data) => {
+				console.log("saveFile result:", data);
+				ToastAndroid.showWithGravity(JSON.stringify(data), ToastAndroid.SHORT, ToastAndroid.CENTER);
+
+				let discovering = this.state.discovering;
+				discovering.forEach((service, discovering_index) => {
+					if (service.serviceId == serviceId) {
+						let endpoints = service.endpoints;
+
+						endpoints.forEach((endpoint, endpoint_index) => {
+							if (endpoint.id === endpointId) {
+								let payloads = endpoint.get("payloads");
+
+								payloads.forEach((payload, k) => {
+									if (k === payloadId) {
+										payload = payload.set("data", data);
+									}
+									payloads = payloads.set(k, payload);
+								});
+								endpoint = endpoint.set("payloads",payloads);
+
+								endpoints = endpoints.set(endpoint_index, endpoint);
+							}
+						});
+
+						service = service.set("endpoints", endpoints);
+
+						discovering = discovering.set(discovering_index, service)
+					}
+				});
+
+				let advertising = this.state.advertising;
+				advertising.forEach((service, advertising_index) => {
+					if (service.serviceId == serviceId) {
+						let endpoints = service.endpoints;
+
+						endpoints.forEach((endpoint, endpoint_index) => {
+							if (endpoint.id === endpointId) {
+								let payloads = endpoint.get("payloads");
+
+								payloads.forEach((payload, k) => {
+									if (k === payloadId) {
+										payload = payload.set("data", data);
+									}
+									payloads = payloads.set(k, payload);
+								});
+								endpoint = endpoint.set("payloads",payloads);
+
+								endpoints = endpoints.set(endpoint_index, endpoint);
+							}
+						});
+
+						service = service.set("endpoints", endpoints);
+
+						advertising = advertising.set(advertising_index, service)
+					}
+				});
+
+				this.setState({
+					discovering: discovering,
+					advertising: advertising,
+				});
+			}
+		);
 	}
 	handleReadBytes = (endpoint, payload) => {
+		const serviceId = endpoint.serviceId,
+		endpointId = endpoint.id,
+		payloadId = payload.payloadId;
+
 		console.log("handleReadBytes", endpoint.toJS(), payload);
-		Nearby.readBytes(endpoint.serviceId, endpoint.id, payload.payloadId).then(
-			(string) => {
-				console.log("readBytes result: ", string);
-				ToastAndroid.showWithGravity(string, ToastAndroid.SHORT, ToastAndroid.CENTER);
+		Nearby.readBytes(serviceId, endpointId, payloadId).then(
+			(data) => {
+				console.log("readBytes result: ", data);
+				ToastAndroid.showWithGravity(JSON.stringify(data), ToastAndroid.SHORT, ToastAndroid.CENTER);
+
+				let discovering = this.state.discovering;
+				discovering.forEach((service, discovering_index) => {
+					if (service.serviceId == serviceId) {
+						let endpoints = service.endpoints;
+
+						endpoints.forEach((endpoint, endpoint_index) => {
+							if (endpoint.id === endpointId) {
+								let payloads = endpoint.get("payloads");
+
+								payloads.forEach((payload, k) => {
+									if (k === payloadId) {
+										payload = payload.set("data", data);
+									}
+									payloads = payloads.set(k, payload);
+								});
+								endpoint = endpoint.set("payloads",payloads);
+
+								endpoints = endpoints.set(endpoint_index, endpoint);
+							}
+						});
+
+						service = service.set("endpoints", endpoints);
+
+						discovering = discovering.set(discovering_index, service)
+					}
+				});
+
+				let advertising = this.state.advertising;
+				advertising.forEach((service, advertising_index) => {
+					if (service.serviceId == serviceId) {
+						let endpoints = service.endpoints;
+
+						endpoints.forEach((endpoint, endpoint_index) => {
+							if (endpoint.id === endpointId) {
+								let payloads = endpoint.get("payloads");
+
+								payloads.forEach((payload, k) => {
+									if (k === payloadId) {
+										payload = payload.set("data", data);
+									}
+									payloads = payloads.set(k, payload);
+								});
+								endpoint = endpoint.set("payloads",payloads);
+
+								endpoints = endpoints.set(endpoint_index, endpoint);
+							}
+						});
+
+						service = service.set("endpoints", endpoints);
+
+						advertising = advertising.set(advertising_index, service)
+					}
+				});
+
+				this.setState({
+					discovering: discovering,
+					advertising: advertising,
+				});
 			}
 		);
 	}

@@ -100,6 +100,8 @@ const AdvertisingList = (props) => {
 											<Text note>{endpoint.id}</Text>
 											<Text>Name</Text>
 											<Text note>{endpoint.name}</Text>
+											<Text>State</Text>
+											<Text note>{endpoint.state}</Text>
 										</Body>
 									</Left>
 									<Right>
