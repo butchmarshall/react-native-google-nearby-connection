@@ -1,4 +1,4 @@
-package com.tempapp;
+package com.butchmarshall.reactnative.nearby.connection;
 
 import android.app.Application;
 

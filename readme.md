@@ -1,5 +1,7 @@
-# react-native-google-nearby-connection
+# react-native-google-nearby-connection [![npm version](https://badge.fury.io/js/react-native-google-nearby-connection.svg)](https://badge.fury.io/js/react-native-google-nearby-connection)
 React Native wrapper for Googles [Nearby Connection API](https://developers.google.com/nearby/connections/overview)
+
+Download the React Native Nearby Connection demo app from the [Google Play Store (Android)](https://play.google.com/store/apps/details?id=com.butchmarshall.reactnative.nearby.connection)
 
 # Install
 
@@ -183,6 +185,7 @@ NearbyConnection.removePayload(
     endpointId,              // ID of the endpoint wishing to stop playing audio from
     payloadId                // Unique identifier of the payload
 );
+```
 
 Open the microphone and broadcast audio to an endpoint
 
@@ -255,6 +258,7 @@ Send a bytes payload (Payload.BYTES)
 NearbyConnection.sendBytes(
     serviceId,               // A unique identifier for the service
     endpointId,              // ID of the endpoint wishing to stop playing audio from
+    bytes                    // A string of bytes to send
 );
 ```
 
@@ -267,11 +271,11 @@ NearbyConnection.readBytes(
     payloadId                // Unique identifier of the payload
 ).then(({
     type,                    // The Payload.Type represented by this payload
-    bytes,                   // \[Payload\.Type\.BYTES\] The bytes string that was sent
-    payloadId,               // \[Payload\.Type\.FILE\ or Payload\.Type\.STREAM\] The payloadId of the payload this payload is describing
-    filename,                // \[Payload\.Type\.FILE\] The name of the file being sent
-    metadata,                // \[Payload\.Type\.FILE\] The metadata sent along with the file
-    streamType,              // \[Payload\.Type\.STREAM\] The type of stream this is \[audio or video\]
+    bytes,                   // [Payload.Type.BYTES] The bytes string that was sent
+    payloadId,               // [Payload.Type.FILE or Payload.Type.STREAM] The payloadId of the payload this payload is describing
+    filename,                // [Payload.Type.FILE] The name of the file being sent
+    metadata,                // [Payload.Type.FILE] The metadata sent along with the file
+    streamType,              // [Payload.Type.STREAM] The type of stream this is [audio or video]
 }) => {
 });
 ```

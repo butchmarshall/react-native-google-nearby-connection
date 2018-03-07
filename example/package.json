@@ -1,6 +1,6 @@
 {
   "name": "TempApp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": "Butch Marshall",
   "license": "MIT",
   "private": true,
@@ -10,6 +10,7 @@
     "react-test-renderer": "16.2.0"
   },
   "scripts": {
+    "clean": "(cd android && ./gradlew clean)",
     "start": "react-native start",
     "android": "rm ../android/build -Rf && react-native run-android",
     "android:release": "(cd android && ENVFILE=.env.production ./gradlew assembleRelease)",
